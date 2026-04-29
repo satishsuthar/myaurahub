@@ -153,9 +153,11 @@ function AdminApp() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f7fb] text-[#16202a]">
+    <main className="min-h-screen bg-[linear-gradient(180deg,#f7f9fd_0%,#f4f7ff_42%,#f7fbf8_100%)] text-[#16202a]">
       <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-[#dde3ec] bg-[#fbfcff] px-4 py-5 lg:block">
-        <div className="mb-7 rounded-md border border-[#e5e9f2] bg-white p-3 shadow-sm">
+        <div className="mb-7 overflow-hidden rounded-md border border-[#e5e9f2] bg-white shadow-sm">
+          <ColorRail />
+          <div className="p-3">
           <div className="mb-3 flex gap-1.5">
             <span className="h-2.5 w-2.5 rounded-full bg-[#4285f4]" />
             <span className="h-2.5 w-2.5 rounded-full bg-[#34a853]" />
@@ -164,6 +166,7 @@ function AdminApp() {
           </div>
           <div className="display-font text-lg font800 font-bold">{authUser.workspaceName}</div>
           <div className="text-xs font-medium text-[#64748b]">/{authUser.workspaceSlug}</div>
+          </div>
         </div>
         <nav className="space-y-1 text-sm font-medium">
           <NavItem icon={<Calendar size={17} />} label="Calendars" active={activeTab === "calendars"} onClick={() => setActiveTab("calendars")} />
@@ -176,6 +179,7 @@ function AdminApp() {
 
       <section className="lg:pl-64">
         <header className="border-b border-[#dde3ec] bg-white/95">
+          <ColorRail />
           <div className="flex items-center justify-between px-5 py-3 lg:px-6">
             <div>
               <h1 className="display-font text-xl font-bold">Calendar Booking</h1>
@@ -195,7 +199,7 @@ function AdminApp() {
             <Panel title="Appointment Types" icon={<Calendar size={18} />}>
               <div className="overflow-hidden rounded-md border border-[#dde3ec]">
                 <table className="w-full border-collapse bg-white text-sm">
-                  <thead className="bg-[#f2f6ff] text-left text-xs uppercase tracking-wide text-[#64748b]">
+                  <thead className="bg-[linear-gradient(90deg,#eef5ff,#f4fbf2,#fff8df)] text-left text-xs uppercase tracking-wide text-[#64748b]">
                     <tr>
                       <th className="px-4 py-3">Name</th>
                       <th className="px-4 py-3">Duration</th>
@@ -209,7 +213,7 @@ function AdminApp() {
                   <tbody>
                     {appointments.map((item) => (
                       <tr key={item.id} className="border-t border-[#e6ebf2]">
-                        <td className="px-4 py-3 font-medium">{item.name}</td>
+                        <td className="px-4 py-3 font-medium"><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-[#4285f4]" />{item.name}</td>
                         <td className="px-4 py-3">{item.durationMinutes} min</td>
                         <td className="px-4 py-3">{item.serviceIntervalMinutes ?? 15} min</td>
                         <td className="px-4 py-3">{item.bufferBeforeMinutes}/{item.bufferAfterMinutes} min</td>
@@ -259,7 +263,7 @@ function AdminApp() {
             <Panel title="Availability" icon={<Clock size={18} />}>
               <div className="space-y-3">
                 {rules.map((rule, index) => (
-                  <div key={`${rule.dayOfWeek}-${index}`} className="grid grid-cols-[1fr_92px_92px_38px] gap-2">
+                  <div key={`${rule.dayOfWeek}-${index}`} className="grid grid-cols-[1fr_92px_92px_38px] gap-2 rounded-md border-l-4 border-[#34a853] bg-[#f7fbf8] p-2">
                     <select className="rounded-md border border-stone-300 bg-white p-2 text-sm" value={rule.dayOfWeek} onChange={(event) => updateRule(index, { dayOfWeek: event.target.value })}>
                       {weekdays.map((day) => <option key={day} value={day}>{day}</option>)}
                     </select>
@@ -277,7 +281,7 @@ function AdminApp() {
             <Panel title="Fixed Date Unavailability & Holidays" icon={<Calendar size={18} />}>
               <div className="space-y-3">
                 {unavailability.map((item, index) => (
-                  <div key={`${item.date}-${index}`} className="grid grid-cols-[150px_1fr_38px] gap-2">
+                  <div key={`${item.date}-${index}`} className="grid grid-cols-[150px_1fr_38px] gap-2 rounded-md border-l-4 border-[#fbbc05] bg-[#fffaf0] p-2">
                     <input className="rounded-md border border-stone-300 bg-white p-2 text-sm" type="date" value={item.date} onChange={(event) => setUnavailability(unavailability.map((row, i) => i === index ? { ...row, date: event.target.value } : row))} />
                     <input className="rounded-md border border-stone-300 bg-white p-2 text-sm" placeholder="Reason" value={item.reason ?? ""} onChange={(event) => setUnavailability(unavailability.map((row, i) => i === index ? { ...row, reason: event.target.value } : row))} />
                     <button className="rounded-md border border-stone-300 p-2" onClick={() => setUnavailability(unavailability.filter((_, i) => i !== index))}><Trash2 size={16} /></button>
@@ -297,7 +301,7 @@ function AdminApp() {
               <div className="space-y-3">
                 {bookings.length === 0 && <p className="text-sm text-stone-600">No bookings yet.</p>}
                 {bookings.map((booking) => (
-                  <div key={booking.id} className="rounded-md border border-stone-200 bg-white p-3 text-sm">
+                  <div key={booking.id} className="rounded-md border border-stone-200 bg-[linear-gradient(90deg,#ffffff,#f4f9ff)] p-3 text-sm">
                     <div className="flex items-center justify-between">
                       <div className="font-medium">{booking.customerName}</div>
                       <span className="text-xs text-stone-500">{booking.status}</span>
@@ -352,8 +356,10 @@ function AuthPage({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => vo
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#f6f7fb] px-4 text-[#16202a]">
-      <section className="w-full max-w-md rounded-md border border-[#dde3ec] bg-white p-6 shadow-[0_8px_28px_rgba(15,23,42,0.08)]">
+    <main className="flex min-h-screen items-center justify-center bg-[linear-gradient(135deg,#f7f9fd,#f4f8ff_45%,#f7fbf8)] px-4 text-[#16202a]">
+      <section className="w-full max-w-md overflow-hidden rounded-md border border-[#dde3ec] bg-white shadow-[0_8px_28px_rgba(15,23,42,0.08)]">
+        <ColorRail />
+        <div className="p-6">
         <div className="mb-5 flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-md bg-[#2563eb] text-white">
           <Lock size={20} />
@@ -379,6 +385,7 @@ function AuthPage({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => vo
         <button className="mt-4 text-sm font-bold text-[#2563eb]" onClick={() => setMode(mode === "signup" ? "login" : "signup")}>
           {mode === "signup" ? "Already have an account? Login" : "Need an account? Sign up"}
         </button>
+        </div>
       </section>
     </main>
   );
@@ -446,8 +453,10 @@ function PublicBookingPage() {
 
   if (confirmed && selectedSlot && metadata) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f6f7fb] px-4 py-10 text-[#16202a]">
-        <section className="w-full max-w-xl rounded-lg border border-[#dde3ec] bg-white p-8 text-center shadow-[0_8px_28px_rgba(15,23,42,0.08)]">
+      <main className="flex min-h-screen items-center justify-center bg-[linear-gradient(135deg,#f7f9fd,#f4f8ff_45%,#f7fbf8)] px-4 py-10 text-[#16202a]">
+        <section className="w-full max-w-xl overflow-hidden rounded-lg border border-[#dde3ec] bg-white text-center shadow-[0_8px_28px_rgba(15,23,42,0.08)]">
+          <ColorRail />
+          <div className="p-8">
           <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-[#e7f7ee] text-[#006b3f]">
             <Check size={24} />
           </div>
@@ -459,15 +468,16 @@ function PublicBookingPage() {
           <a className="mt-6 inline-flex rounded-md border border-[#006bff] px-4 py-2 text-sm font-semibold text-[#006bff]" href={`/book/${workspaceSlug}/${appointmentSlug}`}>
             Book another time
           </a>
+          </div>
         </section>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f7fb] px-4 py-5 text-[#16202a] md:py-8">
+    <main className="min-h-screen bg-[linear-gradient(135deg,#f7f9fd,#f4f8ff_45%,#f7fbf8)] px-4 py-5 text-[#16202a] md:py-8">
       <section className="mx-auto grid max-w-6xl overflow-hidden rounded-lg border border-[#dde3ec] bg-white shadow-[0_8px_28px_rgba(15,23,42,0.08)] lg:grid-cols-[300px_1fr_280px]">
-        <aside className="border-b border-[#e4e4e4] p-6 lg:border-b-0 lg:border-r">
+        <aside className="border-b border-[#e4e4e4] bg-[linear-gradient(180deg,#ffffff,#f7fbff)] p-6 lg:border-b-0 lg:border-r">
           <div className="mb-6 flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-md bg-[#2563eb] text-sm font-bold text-white">
               {(metadata?.workspaceName ?? "A").slice(0, 1)}
@@ -483,13 +493,14 @@ function PublicBookingPage() {
           <h1 className="display-font text-2xl font-bold leading-tight">{metadata?.appointmentTypeName ?? "Loading..."}</h1>
           <p className="mt-4 text-sm leading-6 text-[#5f5f5f]">{metadata?.description}</p>
           <div className="mt-7 space-y-4 text-sm font-medium text-[#5f5f5f]">
-            <div className="flex items-center gap-3"><Clock size={18} /> {metadata?.durationMinutes ?? 30} min</div>
-            <div className="flex items-center gap-3"><MapPin size={18} /> {metadata?.locationValue ?? "Online meeting"}</div>
-            <div className="flex items-center gap-3"><Calendar size={18} /> Australia/Sydney</div>
+            <div className="flex items-center gap-3"><span className="flex h-8 w-8 items-center justify-center rounded-md bg-[#fff4db] text-[#9a6700]"><Clock size={17} /></span> {metadata?.durationMinutes ?? 30} min</div>
+            <div className="flex items-center gap-3"><span className="flex h-8 w-8 items-center justify-center rounded-md bg-[#edf8f1] text-[#137333]"><MapPin size={17} /></span> {metadata?.locationValue ?? "Online meeting"}</div>
+            <div className="flex items-center gap-3"><span className="flex h-8 w-8 items-center justify-center rounded-md bg-[#eef5ff] text-[#2563eb]"><Calendar size={17} /></span> Australia/Sydney</div>
           </div>
         </aside>
 
         <section className="border-b border-[#e4e4e4] p-6 lg:border-b-0">
+          <ColorRail />
           <h2 className="display-font mb-5 text-xl font-bold">Select a Date & Time</h2>
           <div className="mb-5 flex items-center justify-between">
             <button className="flex h-9 w-9 items-center justify-center rounded-full text-xl text-[#006bff] hover:bg-[#eef5ff]" onClick={() => { setVisibleMonth(addMonths(visibleMonth, -1)); setSelectedSlot(null); }}>
@@ -520,8 +531,8 @@ function PublicBookingPage() {
                   className={[
                     "mx-auto flex h-11 w-11 items-center justify-center rounded-full text-sm font-bold transition",
                     !date ? "invisible" : "",
-                    hasSlots && !isSelected ? "text-[#006bff] hover:bg-[#eef5ff]" : "",
-                    isSelected ? "bg-[#006bff] text-white" : "",
+                    hasSlots && !isSelected ? "border border-[#d8e6ff] bg-[#f8fbff] text-[#006bff] hover:bg-[#eef5ff]" : "",
+                    isSelected ? "bg-[#006bff] text-white shadow-sm shadow-blue-200" : "",
                     !hasSlots || isPast ? "cursor-not-allowed text-[#b9b9b9]" : ""
                   ].join(" ")}
                   onClick={() => {
@@ -539,13 +550,13 @@ function PublicBookingPage() {
 
           <div className="mt-6">
             <div className="mb-2 text-sm font-bold">Time zone</div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-[#dadada] px-3 py-2 text-sm text-[#4f4f4f]">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#cfe0ff] bg-[#f5f9ff] px-3 py-2 text-sm text-[#4f4f4f]">
               <MapPin size={15} /> Australia/Sydney
             </div>
           </div>
         </section>
 
-        <aside className="bg-[#fbfcff] p-6">
+        <aside className="bg-[linear-gradient(180deg,#fbfcff,#fffaf0)] p-6">
           {!selectedSlot && (
             <>
               <h3 className="mb-4 text-base font-bold">
@@ -556,7 +567,7 @@ function PublicBookingPage() {
                 {selectedDaySlots.map((slot) => (
                   <button
                     key={slot.startUtc}
-                    className="w-full rounded-md border border-[#006bff] bg-white px-4 py-3 text-center text-sm font-bold text-[#006bff] hover:border-[#0051c7] hover:bg-[#f4f9ff]"
+                    className="w-full rounded-md border border-[#006bff] bg-white px-4 py-3 text-center text-sm font-bold text-[#006bff] shadow-sm shadow-blue-50 hover:border-[#0051c7] hover:bg-[#f4f9ff]"
                     onClick={() => setSelectedSlot(slot)}
                   >
                     {new Date(slot.displayStart).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
@@ -628,18 +639,32 @@ function buildMonthDays(month: Date) {
 }
 
 function NavItem({ icon, label, active = false, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void }) {
-  return <button className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left ${active ? "bg-[#eaf2ff] text-[#174ea6]" : "text-[#64748b] hover:bg-[#f1f5f9]"}`} onClick={onClick}>{icon}{label}</button>;
+  return <button className={`flex w-full items-center gap-2 rounded-md border-l-4 px-3 py-2 text-left ${active ? "border-[#4285f4] bg-[#eaf2ff] text-[#174ea6]" : "border-transparent text-[#64748b] hover:border-[#fbbc05] hover:bg-[#fff8df]"}`} onClick={onClick}>{icon}{label}</button>;
 }
 
 function Panel({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="rounded-md border border-[#dde3ec] bg-white p-4 shadow-sm">
+    <section className="overflow-hidden rounded-md border border-[#dde3ec] bg-white shadow-sm">
+      <ColorRail />
+      <div className="p-4">
       <div className="mb-4 flex items-center gap-2 display-font text-base font-bold text-[#16202a]">
-        <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[#f2f6ff] text-[#2563eb]">{icon}</span>
+        <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[linear-gradient(135deg,#eef5ff,#edf8f1)] text-[#2563eb]">{icon}</span>
         {title}
       </div>
       {children}
+      </div>
     </section>
+  );
+}
+
+function ColorRail() {
+  return (
+    <div className="grid h-1.5 grid-cols-4">
+      <span className="bg-[#4285f4]" />
+      <span className="bg-[#34a853]" />
+      <span className="bg-[#fbbc05]" />
+      <span className="bg-[#ea4335]" />
+    </div>
   );
 }
 
