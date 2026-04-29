@@ -84,7 +84,7 @@ function AdminApp() {
   const [unavailability, setUnavailability] = useState<UnavailabilityDate[]>([]);
   const [form, setForm] = useState(defaultAppointment);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"calendars" | "availability" | "bookings" | "contacts" | "settings">("calendars");
+  const [activeTab, setActiveTab] = useState<"calendars" | "availability" | "bookings" | "schedulingSettings" | "contacts" | "settings" | "profile">("calendars");
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"success" | "error">("success");
   const [savingAppointment, setSavingAppointment] = useState(false);
@@ -354,11 +354,12 @@ function AdminApp() {
           </div>
         </div>
         <nav className="space-y-1 text-sm font-medium">
-          <NavItem icon={<Calendar size={17} />} label="Calendars" active={activeTab === "calendars"} onClick={() => setActiveTab("calendars")} />
-          <NavItem icon={<Clock size={17} />} label="Availability" active={activeTab === "availability"} onClick={() => setActiveTab("availability")} />
-          <NavItem icon={<Users size={17} />} label="Bookings" active={activeTab === "bookings"} onClick={() => setActiveTab("bookings")} />
+          <NavItem icon={<Calendar size={17} />} label="Scheduling" active={["calendars", "availability", "bookings", "schedulingSettings"].includes(activeTab)} onClick={() => setActiveTab("calendars")} />
           <NavItem icon={<Users size={17} />} label="Contacts" active={activeTab === "contacts"} onClick={() => setActiveTab("contacts")} />
-          <NavItem icon={<Settings size={17} />} label="Settings" active={activeTab === "settings"} onClick={() => setActiveTab("settings")} />
+        </nav>
+        <nav className="absolute bottom-5 left-4 right-4 space-y-1 text-sm font-medium">
+          <NavItem icon={<Settings size={17} />} label="App Settings" active={activeTab === "settings"} onClick={() => setActiveTab("settings")} />
+          <NavItem icon={<Users size={17} />} label="My Profile" active={activeTab === "profile"} onClick={() => setActiveTab("profile")} />
           <NavItem icon={<LogOut size={17} />} label="Logout" onClick={() => { clearAuth(); setAuthUser(null); }} />
         </nav>
       </aside>
@@ -368,8 +369,8 @@ function AdminApp() {
           <ColorRail />
           <div className="flex items-center justify-between px-5 py-3 lg:px-6">
             <div>
-              <h1 className="display-font text-xl font-bold">Calendar Booking</h1>
-              <p className="text-xs font-medium text-[#64748b]">Appointment types, availability, buffers, notices, and bookings.</p>
+              <h1 className="display-font text-xl font-bold">{activeTab === "contacts" ? "Contacts" : activeTab === "settings" ? "App Settings" : activeTab === "profile" ? "My Profile" : "Scheduling"}</h1>
+              <p className="text-xs font-medium text-[#64748b]">{activeTab === "contacts" ? "Contacts, custom fields, tasks, and activity timeline." : activeTab === "settings" ? "Workspace-wide branding and application settings." : activeTab === "profile" ? "Your login and workspace access details." : "Appointment types, availability, bookings, and scheduling settings."}</p>
             </div>
             <a className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white shadow-sm shadow-blue-200" href={`/book/${authUser.workspaceSlug}/${appointments[0]?.slug ?? "discovery-call"}`}>
               <ExternalLink size={16} /> Open booking page
@@ -380,6 +381,15 @@ function AdminApp() {
         {message && <div className={`mx-5 mt-5 rounded-md border px-4 py-3 text-sm lg:mx-8 ${messageTone === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-rose-200 bg-rose-50 text-rose-900"}`}>{message}</div>}
 
         <div className="px-5 py-5 lg:px-6">
+          {["calendars", "availability", "bookings", "schedulingSettings"].includes(activeTab) && (
+            <div className="mb-5 flex flex-wrap gap-2 rounded-md border border-[#dde3ec] bg-white p-2 shadow-sm">
+              <ModuleTab label="Appointment Types" active={activeTab === "calendars"} onClick={() => setActiveTab("calendars")} />
+              <ModuleTab label="Availability" active={activeTab === "availability"} onClick={() => setActiveTab("availability")} />
+              <ModuleTab label="Bookings" active={activeTab === "bookings"} onClick={() => setActiveTab("bookings")} />
+              <ModuleTab label="Settings" active={activeTab === "schedulingSettings"} onClick={() => setActiveTab("schedulingSettings")} />
+            </div>
+          )}
+
           {activeTab === "calendars" && <section className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-5">
             <Panel title="Appointment Types" icon={<Calendar size={18} />}>
@@ -507,6 +517,17 @@ function AdminApp() {
             </Panel>
           </section>}
 
+          {activeTab === "schedulingSettings" && <section className="max-w-3xl">
+            <Panel title="Scheduling Settings" icon={<Settings size={18} />}>
+              <div className="space-y-2 text-sm text-stone-600">
+                <p>Timezone: Australia/Sydney</p>
+                <p>Calendar mode: Personal calendar</p>
+                <p>Round-robin and collective calendar architecture: prepared for later modules.</p>
+                <p>Default public booking URL: <a className="text-moss underline" href={`/book/${authUser.workspaceSlug}/${appointments[0]?.slug ?? "discovery-call"}`}>/book/{authUser.workspaceSlug}/{appointments[0]?.slug ?? "discovery-call"}</a></p>
+              </div>
+            </Panel>
+          </section>}
+
           {activeTab === "contacts" && <section className="grid gap-5 xl:grid-cols-[360px_1fr]">
             <Panel title="Contacts" icon={<Users size={18} />}>
               <button className="mb-4 inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={newContact}>
@@ -605,12 +626,11 @@ function AdminApp() {
           </section>}
 
           {activeTab === "settings" && <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-            <Panel title="Settings" icon={<Settings size={18} />}>
+            <Panel title="Application Settings" icon={<Settings size={18} />}>
               <div className="space-y-2 text-sm text-stone-600">
                 <p>Workspace: {authUser.workspaceName}</p>
-                <p>Timezone: Australia/Sydney</p>
-                <p>Calendar mode: Personal calendar</p>
-                <p>Public booking URL: <a className="text-moss underline" href={`/book/${authUser.workspaceSlug}/${appointments[0]?.slug ?? "discovery-call"}`}>/book/{authUser.workspaceSlug}/{appointments[0]?.slug ?? "discovery-call"}</a></p>
+                <p>Workspace slug: /{authUser.workspaceSlug}</p>
+                <p>Branding, fonts, and global app appearance apply across modules.</p>
               </div>
             </Panel>
             <Panel title="Brand Theme" icon={<Settings size={18} />}>
@@ -646,6 +666,17 @@ function AdminApp() {
               <button type="button" disabled={savingTheme} className="mt-5 inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white disabled:opacity-60" onClick={saveTheme}>
                 <Save size={16} /> {savingTheme ? "Saving..." : "Save theme"}
               </button>
+            </Panel>
+          </section>}
+
+          {activeTab === "profile" && <section className="max-w-3xl">
+            <Panel title="My Profile" icon={<Users size={18} />}>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Email" value={authUser.email} onChange={() => undefined} />
+                <Field label="Workspace" value={authUser.workspaceName} onChange={() => undefined} />
+                <Field label="Workspace slug" value={authUser.workspaceSlug} onChange={() => undefined} />
+                <Field label="User id" value={authUser.userId} onChange={() => undefined} />
+              </div>
             </Panel>
           </section>}
         </div>
@@ -983,6 +1014,14 @@ function validateCustomer(customer: { firstName: string; lastName: string; email
 
 function NavItem({ icon, label, active = false, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void }) {
   return <button className={`flex w-full items-center gap-2 rounded-md border-l-4 px-3 py-2 text-left ${active ? "border-[#4285f4] bg-[#eaf2ff] text-[#174ea6]" : "border-transparent text-[#64748b] hover:border-[#fbbc05] hover:bg-[#fff8df]"}`} onClick={onClick}>{icon}{label}</button>;
+}
+
+function ModuleTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button className={`rounded-md px-3 py-2 text-sm font-bold ${active ? "bg-[var(--theme-primary)] text-white" : "text-[#64748b] hover:bg-[#f1f5f9]"}`} onClick={onClick}>
+      {label}
+    </button>
+  );
 }
 
 function Panel({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
