@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Calendar, Check, Clock, Copy, ExternalLink, Lock, LogOut, MapPin, Plus, Save, Settings, Trash2, Users } from "lucide-react";
 import "./index.css";
-import { api, apiBase, AppointmentType, AvailabilityRule, AuthResponse, AuthUser, Booking, Contact, ContactActivity, ContactTask, Slot, ThemeConfig, UnavailabilityDate, clearAuth, getAuthUser, saveAuth, userId } from "./api";
+import { api, apiBase, AppointmentType, AvailabilityRule, AuthResponse, AuthUser, Booking, Contact, ContactActivity, ContactCustomField, ContactTask, Slot, ThemeConfig, UnavailabilityDate, clearAuth, getAuthUser, saveAuth, userId } from "./api";
 
 const defaultAppointment: Omit<AppointmentType, "id" | "isActive"> = {
   assignedUserId: userId,
@@ -64,6 +64,12 @@ const emptyContact: Omit<Contact, "id"> = {
 };
 
 const emptyTask = { title: "", description: "", dueDate: "" };
+const customFieldTypes = [
+  { group: "Text input", options: [["text", "Single line"], ["multiline", "Multiline"], ["textList", "Text box list"]] },
+  { group: "Values", options: [["number", "Number"], ["phone", "Phone"], ["currency", "Currency"]] },
+  { group: "Options", options: [["dropdownSingle", "Dropdown (single)"], ["dropdownMultiple", "Dropdown (multiple)"], ["radio", "Radio"], ["checkbox", "Checkbox"]] },
+  { group: "Others", options: [["date", "Date picker"], ["file", "File upload"], ["signature", "Signature"]] }
+];
 
 function Router() {
   return window.location.pathname.startsWith("/book/") ? <PublicBookingPage /> : <AdminApp />;
@@ -79,7 +85,7 @@ function AdminApp() {
   const [contactTasks, setContactTasks] = useState<ContactTask[]>([]);
   const [contactActivity, setContactActivity] = useState<ContactActivity[]>([]);
   const [taskForm, setTaskForm] = useState(emptyTask);
-  const [customFieldDraft, setCustomFieldDraft] = useState({ name: "", value: "" });
+  const [customFieldDraft, setCustomFieldDraft] = useState({ name: "", type: "text", value: "", options: "" });
   const [rules, setRules] = useState<AvailabilityRule[]>([]);
   const [unavailability, setUnavailability] = useState<UnavailabilityDate[]>([]);
   const [form, setForm] = useState(defaultAppointment);
@@ -258,7 +264,7 @@ function AdminApp() {
     setContactTasks([]);
     setContactActivity([]);
     setTaskForm(emptyTask);
-    setCustomFieldDraft({ name: "", value: "" });
+    setCustomFieldDraft({ name: "", type: "text", value: "", options: "" });
     setActiveTab("contacts");
   }
 
@@ -305,8 +311,9 @@ function AdminApp() {
   function addCustomField() {
     const key = customFieldDraft.name.trim();
     if (!key) return;
-    setContactForm({ ...contactForm, customFields: { ...(contactForm.customFields ?? {}), [key]: customFieldDraft.value } });
-    setCustomFieldDraft({ name: "", value: "" });
+    const options = customFieldDraft.options.split(",").map((option) => option.trim()).filter(Boolean);
+    setContactForm({ ...contactForm, customFields: { ...(contactForm.customFields ?? {}), [key]: { type: customFieldDraft.type, value: defaultCustomFieldValue(customFieldDraft.type, customFieldDraft.value), options } } });
+    setCustomFieldDraft({ name: "", type: "text", value: "", options: "" });
   }
 
   function editAppointment(item: AppointmentType) {
@@ -560,27 +567,40 @@ function AdminApp() {
                   <Field label="State" value={contactForm.state ?? ""} onChange={(value) => setContactForm({ ...contactForm, state: value })} />
                   <Field label="Postal code" value={contactForm.postalCode ?? ""} onChange={(value) => setContactForm({ ...contactForm, postalCode: value })} />
                   <Field label="Country" value={contactForm.country ?? ""} onChange={(value) => setContactForm({ ...contactForm, country: value })} />
-                  <Field label="Tags" value={(contactForm.tags ?? []).join(", ")} onChange={(value) => setContactForm({ ...contactForm, tags: value.split(",").map((tag) => tag.trim()).filter(Boolean) })} />
                   <Field label="Source" value={contactForm.source ?? ""} onChange={(value) => setContactForm({ ...contactForm, source: value })} />
+                </div>
+                <div className="mt-4">
+                  <span className="mb-2 block text-sm font-semibold text-[#475569]">Tags</span>
+                  <TagEditor tags={contactForm.tags ?? []} onChange={(tags) => setContactForm({ ...contactForm, tags })} />
                 </div>
                 <textarea className="mt-4 min-h-24 w-full rounded-md border border-[#cbd5e1] bg-white p-3 text-sm" placeholder="Notes" value={contactForm.notes ?? ""} onChange={(event) => setContactForm({ ...contactForm, notes: event.target.value })} />
                 <div className="mt-5 rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
                   <div className="mb-3 text-sm font-bold">Custom fields</div>
                   <div className="space-y-2">
-                    {Object.entries(contactForm.customFields ?? {}).map(([key, value]) => (
-                      <div key={key} className="grid grid-cols-[1fr_1fr_38px] gap-2">
-                        <input className="rounded-md border border-[#cbd5e1] p-2 text-sm" value={key} readOnly />
-                        <input className="rounded-md border border-[#cbd5e1] p-2 text-sm" value={value} onChange={(event) => setContactForm({ ...contactForm, customFields: { ...(contactForm.customFields ?? {}), [key]: event.target.value } })} />
-                        <button className="rounded-md border border-rose-200 text-rose-700" onClick={() => {
-                          const next = { ...(contactForm.customFields ?? {}) };
-                          delete next[key];
-                          setContactForm({ ...contactForm, customFields: next });
-                        }}><Trash2 size={15} className="mx-auto" /></button>
+                    {Object.entries(contactForm.customFields ?? {}).map(([key, field]) => (
+                      <div key={key} className="rounded-md border border-[#dde3ec] bg-white p-3">
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-bold">{key}</div>
+                            <div className="text-xs text-[#64748b]">{customFieldTypeLabel(field.type)}</div>
+                          </div>
+                          <button className="rounded-md border border-rose-200 px-2 py-1 text-rose-700" onClick={() => {
+                            const next = { ...(contactForm.customFields ?? {}) };
+                            delete next[key];
+                            setContactForm({ ...contactForm, customFields: next });
+                          }}><Trash2 size={15} /></button>
+                        </div>
+                        <CustomFieldInput field={normalizeCustomField(field)} onChange={(nextField) => setContactForm({ ...contactForm, customFields: { ...(contactForm.customFields ?? {}), [key]: nextField } })} />
                       </div>
                     ))}
-                    <div className="grid grid-cols-[1fr_1fr_90px] gap-2">
+                    <div className="grid gap-2 rounded-md border border-dashed border-[#cbd5e1] bg-white p-3 md:grid-cols-[1fr_180px_1fr_90px]">
                       <input className="rounded-md border border-[#cbd5e1] p-2 text-sm" placeholder="Field name" value={customFieldDraft.name} onChange={(event) => setCustomFieldDraft({ ...customFieldDraft, name: event.target.value })} />
-                      <input className="rounded-md border border-[#cbd5e1] p-2 text-sm" placeholder="Value" value={customFieldDraft.value} onChange={(event) => setCustomFieldDraft({ ...customFieldDraft, value: event.target.value })} />
+                      <GroupedSelect value={customFieldDraft.type} onChange={(type) => setCustomFieldDraft({ ...customFieldDraft, type })} />
+                      <input className="rounded-md border border-[#cbd5e1] p-2 text-sm" placeholder={customFieldDraft.type.includes("dropdown") || customFieldDraft.type === "radio" || customFieldDraft.type === "checkbox" ? "Options, comma separated" : "Default value"} value={customFieldDraft.type.includes("dropdown") || customFieldDraft.type === "radio" || customFieldDraft.type === "checkbox" ? customFieldDraft.options : customFieldDraft.value} onChange={(event) => {
+                        const value = event.target.value;
+                        if (customFieldDraft.type.includes("dropdown") || customFieldDraft.type === "radio" || customFieldDraft.type === "checkbox") setCustomFieldDraft({ ...customFieldDraft, options: value });
+                        else setCustomFieldDraft({ ...customFieldDraft, value });
+                      }} />
                       <button className="rounded-md border border-[#cbd5e1] bg-white text-sm font-bold" onClick={addCustomField}>Add</button>
                     </div>
                   </div>
@@ -1012,6 +1032,25 @@ function validateCustomer(customer: { firstName: string; lastName: string; email
   return errors;
 }
 
+function defaultCustomFieldValue(type: string, value = ""): string | string[] | boolean {
+  if (type === "dropdownMultiple" || type === "textList" || type === "checkbox") return value ? value.split(",").map((item) => item.trim()).filter(Boolean) : [];
+  if (type === "signature") return "";
+  return value;
+}
+
+function normalizeCustomField(field: ContactCustomField | string): ContactCustomField {
+  if (typeof field === "string") return { type: "text", value: field, options: [] };
+  return { type: field.type || "text", value: field.value ?? defaultCustomFieldValue(field.type || "text"), options: field.options ?? [] };
+}
+
+function customFieldTypeLabel(type: string) {
+  for (const group of customFieldTypes) {
+    const found = group.options.find(([value]) => value === type);
+    if (found) return `${group.group}: ${found[1]}`;
+  }
+  return "Text input: Single line";
+}
+
 function NavItem({ icon, label, active = false, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void }) {
   return <button className={`flex w-full items-center gap-2 rounded-md border-l-4 px-3 py-2 text-left ${active ? "border-[#4285f4] bg-[#eaf2ff] text-[#174ea6]" : "border-transparent text-[#64748b] hover:border-[#fbbc05] hover:bg-[#fff8df]"}`} onClick={onClick}>{icon}{label}</button>;
 }
@@ -1058,6 +1097,85 @@ function ThemeSwatches({ theme }: { theme: ThemeConfig }) {
       ))}
     </div>
   );
+}
+
+function TagEditor({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) => void }) {
+  const [draft, setDraft] = useState("");
+  return (
+    <div className="rounded-md border border-[#cbd5e1] bg-white p-2">
+      <div className="mb-2 flex flex-wrap gap-2">
+        {tags.map((tag) => (
+          <button key={tag} className="rounded-full bg-[#eaf2ff] px-3 py-1 text-xs font-bold text-[#174ea6]" onClick={() => onChange(tags.filter((item) => item !== tag))}>
+            {tag} x
+          </button>
+        ))}
+        {tags.length === 0 && <span className="px-1 text-xs text-[#64748b]">No tags</span>}
+      </div>
+      <div className="flex gap-2">
+        <input className="min-w-0 flex-1 rounded-md border border-[#cbd5e1] p-2 text-sm" placeholder="Add tag" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            const tag = draft.trim();
+            if (tag && !tags.includes(tag)) onChange([...tags, tag]);
+            setDraft("");
+          }
+        }} />
+        <button type="button" className="rounded-md border border-[#cbd5e1] px-3 text-sm font-bold" onClick={() => {
+          const tag = draft.trim();
+          if (tag && !tags.includes(tag)) onChange([...tags, tag]);
+          setDraft("");
+        }}>Add</button>
+      </div>
+    </div>
+  );
+}
+
+function GroupedSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <select className="rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={value} onChange={(event) => onChange(event.target.value)}>
+      {customFieldTypes.map((group) => (
+        <optgroup key={group.group} label={group.group}>
+          {group.options.map(([optionValue, label]) => <option key={optionValue} value={optionValue}>{label}</option>)}
+        </optgroup>
+      ))}
+    </select>
+  );
+}
+
+function CustomFieldInput({ field, onChange }: { field: ContactCustomField; onChange: (field: ContactCustomField) => void }) {
+  const setValue = (value: string | string[] | boolean) => onChange({ ...field, value });
+  if (field.type === "multiline") {
+    return <textarea className="min-h-20 w-full rounded-md border border-[#cbd5e1] p-2 text-sm" value={String(field.value ?? "")} onChange={(event) => setValue(event.target.value)} />;
+  }
+  if (field.type === "textList" || field.type === "dropdownMultiple" || field.type === "checkbox") {
+    const values = Array.isArray(field.value) ? field.value : [];
+    const options = field.options?.length ? field.options : values;
+    return (
+      <div className="space-y-2">
+        {(field.type === "checkbox" || field.type === "dropdownMultiple") && options.length > 0 ? options.map((option) => (
+          <label key={option} className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={values.includes(option)} onChange={(event) => setValue(event.target.checked ? [...values, option] : values.filter((item) => item !== option))} /> {option}
+          </label>
+        )) : <input className="w-full rounded-md border border-[#cbd5e1] p-2 text-sm" value={values.join(", ")} onChange={(event) => setValue(event.target.value.split(",").map((item) => item.trim()).filter(Boolean))} />}
+      </div>
+    );
+  }
+  if (field.type === "dropdownSingle" || field.type === "radio") {
+    return field.type === "radio" ? (
+      <div className="flex flex-wrap gap-3">
+        {(field.options ?? []).map((option) => <label key={option} className="flex items-center gap-2 text-sm"><input type="radio" checked={field.value === option} onChange={() => setValue(option)} /> {option}</label>)}
+      </div>
+    ) : (
+      <select className="w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={String(field.value ?? "")} onChange={(event) => setValue(event.target.value)}>
+        <option value="">Select</option>
+        {(field.options ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+    );
+  }
+  if (field.type === "file") return <input className="w-full rounded-md border border-[#cbd5e1] p-2 text-sm" type="file" onChange={(event) => setValue(event.target.files?.[0]?.name ?? "")} />;
+  if (field.type === "signature") return <input className="w-full rounded-md border border-[#cbd5e1] p-2 text-sm" placeholder="Signature text / signer name" value={String(field.value ?? "")} onChange={(event) => setValue(event.target.value)} />;
+  const inputType = field.type === "date" ? "date" : field.type === "number" || field.type === "currency" ? "number" : field.type === "phone" ? "tel" : "text";
+  return <input className="w-full rounded-md border border-[#cbd5e1] p-2 text-sm" type={inputType} value={String(field.value ?? "")} onChange={(event) => setValue(event.target.value)} />;
 }
 
 function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {

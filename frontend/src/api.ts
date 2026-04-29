@@ -67,9 +67,15 @@ export type Contact = {
   source?: string;
   notes?: string;
   tags?: string[];
-  customFields?: Record<string, string>;
+  customFields?: Record<string, ContactCustomField>;
   createdAtUtc?: string;
   updatedAtUtc?: string;
+};
+
+export type ContactCustomField = {
+  type: string;
+  value: string | string[] | boolean;
+  options?: string[];
 };
 
 export type ContactTask = {

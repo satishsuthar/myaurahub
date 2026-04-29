@@ -436,8 +436,33 @@ def clean_contact_data(data):
         "source": str(data.get("source", "Manual")).strip()[:80],
         "notes": str(data.get("notes", "")).strip()[:2000],
         "tags": [str(tag).strip()[:40] for tag in data.get("tags", []) if str(tag).strip()][:20],
-        "customFields": {str(k).strip()[:60]: str(v).strip()[:300] for k, v in custom_fields.items() if str(k).strip()},
+        "customFields": clean_custom_fields(custom_fields),
     }
+
+
+def clean_custom_fields(custom_fields):
+    allowed_types = {"text", "multiline", "textList", "number", "phone", "currency", "dropdownSingle", "dropdownMultiple", "radio", "checkbox", "date", "file", "signature"}
+    cleaned = {}
+    for key, field in custom_fields.items():
+        name = str(key).strip()[:60]
+        if not name:
+            continue
+        if isinstance(field, dict):
+            field_type = str(field.get("type", "text"))
+            if field_type not in allowed_types:
+                field_type = "text"
+            value = field.get("value", "")
+            if isinstance(value, list):
+                clean_value = [str(item).strip()[:300] for item in value if str(item).strip()][:50]
+            elif isinstance(value, bool):
+                clean_value = value
+            else:
+                clean_value = str(value).strip()[:1000]
+            options = [str(option).strip()[:120] for option in field.get("options", []) if str(option).strip()][:50]
+            cleaned[name] = {"type": field_type, "value": clean_value, "options": options}
+        else:
+            cleaned[name] = {"type": "text", "value": str(field).strip()[:1000], "options": []}
+    return cleaned
 
 
 def create_contact(context, data):
