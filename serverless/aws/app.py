@@ -366,7 +366,7 @@ def get_theme(workspace_slug):
 
 
 def clean_theme(data):
-    allowed_fonts = {"Inter", "Plus Jakarta Sans", "Poppins", "DM Sans"}
+    allowed_fonts = {"Inter", "Plus Jakarta Sans", "Poppins", "DM Sans", "Manrope", "Montserrat", "Lora", "Playfair Display", "Nunito Sans", "Outfit"}
     theme = {**DEFAULT_THEME, **{k: data.get(k, DEFAULT_THEME[k]) for k in DEFAULT_THEME}}
     for key in ["primary", "secondary", "accent", "danger", "background", "surface", "text", "muted"]:
         value = str(theme[key])

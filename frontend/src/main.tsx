@@ -26,10 +26,21 @@ const themePresets: ThemeConfig[] = [
   { preset: "bright", primary: "#2563eb", secondary: "#34a853", accent: "#fbbc05", danger: "#ea4335", background: "#f6f7fb", surface: "#ffffff", text: "#16202a", muted: "#64748b", displayFont: "Plus Jakarta Sans", bodyFont: "Inter" },
   { preset: "clinic", primary: "#0f766e", secondary: "#38bdf8", accent: "#f59e0b", danger: "#dc2626", background: "#f4fbfa", surface: "#ffffff", text: "#102a2a", muted: "#5b7080", displayFont: "Plus Jakarta Sans", bodyFont: "Inter" },
   { preset: "creator", primary: "#7c3aed", secondary: "#ec4899", accent: "#f97316", danger: "#ef4444", background: "#fbf7ff", surface: "#ffffff", text: "#211633", muted: "#6b5d7a", displayFont: "Plus Jakarta Sans", bodyFont: "Inter" },
-  { preset: "studio", primary: "#111827", secondary: "#06b6d4", accent: "#84cc16", danger: "#ef4444", background: "#f8fafc", surface: "#ffffff", text: "#111827", muted: "#64748b", displayFont: "Inter", bodyFont: "Inter" }
+  { preset: "studio", primary: "#111827", secondary: "#06b6d4", accent: "#84cc16", danger: "#ef4444", background: "#f8fafc", surface: "#ffffff", text: "#111827", muted: "#64748b", displayFont: "Inter", bodyFont: "Inter" },
+  { preset: "executive", primary: "#1e3a8a", secondary: "#64748b", accent: "#d97706", danger: "#b91c1c", background: "#f7f9fc", surface: "#ffffff", text: "#111827", muted: "#5b677a", displayFont: "Manrope", bodyFont: "Inter" },
+  { preset: "wellness", primary: "#2f855a", secondary: "#14b8a6", accent: "#f4a261", danger: "#e76f51", background: "#f6fbf6", surface: "#ffffff", text: "#1d3028", muted: "#60756b", displayFont: "Lora", bodyFont: "DM Sans" },
+  { preset: "fitness", primary: "#dc2626", secondary: "#111827", accent: "#facc15", danger: "#991b1b", background: "#fff7f7", surface: "#ffffff", text: "#171717", muted: "#6b7280", displayFont: "Montserrat", bodyFont: "Inter" },
+  { preset: "luxury", primary: "#6d4c1d", secondary: "#111827", accent: "#c8a24a", danger: "#9f1239", background: "#fbfaf7", surface: "#ffffff", text: "#1f1b16", muted: "#746b5d", displayFont: "Playfair Display", bodyFont: "DM Sans" },
+  { preset: "minimal", primary: "#0f172a", secondary: "#475569", accent: "#0ea5e9", danger: "#dc2626", background: "#f8fafc", surface: "#ffffff", text: "#0f172a", muted: "#64748b", displayFont: "Inter", bodyFont: "Inter" },
+  { preset: "sunrise", primary: "#e11d48", secondary: "#f97316", accent: "#facc15", danger: "#be123c", background: "#fff7ed", surface: "#ffffff", text: "#2a1515", muted: "#795548", displayFont: "Poppins", bodyFont: "DM Sans" },
+  { preset: "ocean", primary: "#0369a1", secondary: "#0f766e", accent: "#38bdf8", danger: "#e11d48", background: "#f0f9ff", surface: "#ffffff", text: "#102a43", muted: "#557086", displayFont: "Nunito Sans", bodyFont: "Inter" },
+  { preset: "orchid", primary: "#9333ea", secondary: "#db2777", accent: "#22c55e", danger: "#f43f5e", background: "#faf5ff", surface: "#ffffff", text: "#2e123f", muted: "#7e6a92", displayFont: "Outfit", bodyFont: "DM Sans" },
+  { preset: "sage", primary: "#4d7c0f", secondary: "#0f766e", accent: "#ca8a04", danger: "#b91c1c", background: "#f7fbef", surface: "#ffffff", text: "#1f2a17", muted: "#66765a", displayFont: "Lora", bodyFont: "Nunito Sans" },
+  { preset: "slate", primary: "#334155", secondary: "#0ea5e9", accent: "#f97316", danger: "#ef4444", background: "#f8fafc", surface: "#ffffff", text: "#111827", muted: "#64748b", displayFont: "Manrope", bodyFont: "Inter" }
 ];
 
 const defaultTheme = themePresets[0];
+const fontOptions = ["Inter", "Plus Jakarta Sans", "Poppins", "DM Sans", "Manrope", "Montserrat", "Lora", "Playfair Display", "Nunito Sans", "Outfit"];
 
 function Router() {
   return window.location.pathname.startsWith("/book/") ? <PublicBookingPage /> : <AdminApp />;
@@ -373,8 +384,8 @@ function AdminApp() {
                 <ColorField label="Surface" value={theme.surface} onChange={(value) => setTheme({ ...theme, preset: "custom", surface: value })} />
                 <ColorField label="Text" value={theme.text} onChange={(value) => setTheme({ ...theme, preset: "custom", text: value })} />
                 <ColorField label="Muted text" value={theme.muted} onChange={(value) => setTheme({ ...theme, preset: "custom", muted: value })} />
-                <SelectField label="Display font" value={theme.displayFont} options={["Plus Jakarta Sans", "Inter", "Poppins", "DM Sans"]} onChange={(value) => setTheme({ ...theme, preset: "custom", displayFont: value })} />
-                <SelectField label="Body font" value={theme.bodyFont} options={["Inter", "Plus Jakarta Sans", "Poppins", "DM Sans"]} onChange={(value) => setTheme({ ...theme, preset: "custom", bodyFont: value })} />
+                <SelectField label="Display font" value={theme.displayFont} options={fontOptions} onChange={(value) => setTheme({ ...theme, preset: "custom", displayFont: value })} />
+                <SelectField label="Body font" value={theme.bodyFont} options={fontOptions} onChange={(value) => setTheme({ ...theme, preset: "custom", bodyFont: value })} />
               </div>
               <div className="mt-5 rounded-md border border-[#dde3ec] bg-[var(--theme-surface)] p-4" style={themeStyle(theme)}>
                 <div className="display-font text-lg font-bold text-[var(--theme-text)]">Live preview</div>
