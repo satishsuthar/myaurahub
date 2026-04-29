@@ -103,6 +103,20 @@ def handler(event, _context):
             return response(200, list_contacts(context["workspaceSlug"]))
         if path == "/api/contacts" and method == "POST":
             return response(201, create_contact(context, body))
+        if path == "/api/opportunities/pipelines" and method == "GET":
+            return response(200, list_pipelines(context["workspaceSlug"]))
+        if path == "/api/opportunities/pipelines" and method == "POST":
+            return response(201, create_pipeline(context, body))
+        if path.startswith("/api/opportunities/pipelines/") and method == "PUT":
+            pipeline_id = path.split("/")[4]
+            return response(200, update_pipeline(context, pipeline_id, body))
+        if path == "/api/opportunities" and method == "GET":
+            return response(200, list_opportunities(context["workspaceSlug"]))
+        if path == "/api/opportunities" and method == "POST":
+            return response(201, create_opportunity(context, body))
+        if path.startswith("/api/opportunities/") and method == "PUT":
+            opportunity_id = path.split("/")[3]
+            return response(200, update_opportunity(context, opportunity_id, body))
         if path.startswith("/api/contacts/"):
             parts = path.strip("/").split("/")
             contact_id = parts[2] if len(parts) > 2 else ""
@@ -582,6 +596,141 @@ def update_contact_task(context, contact_id, task_id, data):
         add_contact_activity(context["workspaceSlug"], contact_id, "TaskCompleted", "Task completed", updated["title"])
     table.put_item(Item=updated)
     return {k: updated.get(k) for k in ["id", "contactId", "title", "description", "dueDate", "status", "createdAtUtc", "completedAtUtc"]}
+
+
+def default_pipeline_stages():
+    return [
+        {"id": "stage-new-lead", "name": "New Lead", "order": 1},
+        {"id": "stage-qualified", "name": "Qualified", "order": 2},
+        {"id": "stage-proposal", "name": "Proposal", "order": 3},
+        {"id": "stage-won", "name": "Won", "order": 4},
+    ]
+
+
+def pipeline_shape(item):
+    return {k: item.get(k) for k in ["id", "name", "description", "stages", "isDefault", "createdAtUtc", "updatedAtUtc"]}
+
+
+def list_pipelines(workspace_slug):
+    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("PIPELINE#"))
+    items = result.get("Items", [])
+    if not items:
+        now = datetime.utcnow().isoformat() + "Z"
+        item = {"pk": workspace_pk(workspace_slug), "sk": "PIPELINE#default", "entity": "pipeline", "id": "default", "name": "Sales Pipeline", "description": "Default opportunity pipeline.", "stages": default_pipeline_stages(), "isDefault": True, "createdAtUtc": now}
+        table.put_item(Item=item)
+        items = [item]
+    return [pipeline_shape(item) for item in items]
+
+
+def clean_stages(stages):
+    cleaned = []
+    for index, stage in enumerate(stages or []):
+        name = str(stage.get("name", "")).strip()[:80]
+        if not name:
+            continue
+        stage_id = str(stage.get("id") or slugify(name) or f"stage-{index + 1}")[:80]
+        cleaned.append({"id": stage_id, "name": name, "order": int(stage.get("order", index + 1))})
+    if not cleaned:
+        raise ValueError("At least one pipeline stage is required.")
+    return cleaned
+
+
+def create_pipeline(context, data):
+    name = str(data.get("name", "")).strip()
+    if not name:
+        raise ValueError("Pipeline name is required.")
+    pipeline_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat() + "Z"
+    item = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"PIPELINE#{pipeline_id}", "entity": "pipeline", "id": pipeline_id, "name": name[:120], "description": str(data.get("description", "")).strip()[:1000], "stages": clean_stages(data.get("stages", [])), "isDefault": False, "createdAtUtc": now}
+    table.put_item(Item=item)
+    return pipeline_shape(item)
+
+
+def find_pipeline(workspace_slug, pipeline_id):
+    item = table.get_item(Key={"pk": workspace_pk(workspace_slug), "sk": f"PIPELINE#{pipeline_id}"}).get("Item")
+    if item:
+        return item
+    if pipeline_id == "default":
+        return list_pipelines(workspace_slug)[0]
+    return None
+
+
+def update_pipeline(context, pipeline_id, data):
+    current = find_pipeline(context["workspaceSlug"], pipeline_id)
+    if not current:
+        raise ValueError("Pipeline not found.")
+    updated = {**current, "name": str(data.get("name", current.get("name", ""))).strip()[:120], "description": str(data.get("description", current.get("description", ""))).strip()[:1000], "stages": clean_stages(data.get("stages", current.get("stages", []))), "updatedAtUtc": datetime.utcnow().isoformat() + "Z"}
+    table.put_item(Item=updated)
+    return pipeline_shape(updated)
+
+
+def opportunity_shape(item):
+    return {k: item.get(k) for k in ["id", "pipelineId", "stageId", "contactId", "contactName", "title", "value", "currency", "status", "expectedCloseDate", "source", "notes", "createdAtUtc", "updatedAtUtc"]}
+
+
+def list_opportunities(workspace_slug):
+    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("OPP#"))
+    return [opportunity_shape(item) for item in result.get("Items", [])]
+
+
+def find_opportunity(workspace_slug, opportunity_id):
+    return table.get_item(Key={"pk": workspace_pk(workspace_slug), "sk": f"OPP#{opportunity_id}"}).get("Item")
+
+
+def clean_opportunity(context, data, current=None):
+    pipeline_id = str(data.get("pipelineId", current.get("pipelineId") if current else "")).strip()
+    pipeline = find_pipeline(context["workspaceSlug"], pipeline_id)
+    if not pipeline:
+        raise ValueError("Pipeline not found.")
+    stage_id = str(data.get("stageId", current.get("stageId") if current else "")).strip()
+    valid_stage_ids = {stage["id"] for stage in pipeline.get("stages", [])}
+    if stage_id not in valid_stage_ids:
+        raise ValueError("Pipeline stage not found.")
+    title = str(data.get("title", current.get("title") if current else "")).strip()
+    if not title:
+        raise ValueError("Opportunity title is required.")
+    contact_id = str(data.get("contactId", current.get("contactId", "") if current else "") or "").strip()
+    contact_name = str(data.get("contactName", current.get("contactName", "") if current else "") or "").strip()
+    if contact_id:
+        contact = find_contact_item(context["workspaceSlug"], contact_id)
+        if contact:
+            contact_name = f"{contact.get('firstName', '')} {contact.get('lastName', '')}".strip()
+    return {
+        "pipelineId": pipeline_id,
+        "stageId": stage_id,
+        "contactId": contact_id,
+        "contactName": contact_name[:160],
+        "title": title[:160],
+        "value": Decimal(str(data.get("value", current.get("value", 0) if current else 0) or 0)),
+        "currency": str(data.get("currency", current.get("currency", "AUD") if current else "AUD")).strip().upper()[:3],
+        "status": data.get("status", current.get("status", "Open") if current else "Open") if data.get("status", "Open") in ["Open", "Won", "Lost"] else "Open",
+        "expectedCloseDate": str(data.get("expectedCloseDate", current.get("expectedCloseDate", "") if current else "") or "").strip()[:20],
+        "source": str(data.get("source", current.get("source", "") if current else "") or "").strip()[:80],
+        "notes": str(data.get("notes", current.get("notes", "") if current else "") or "").strip()[:2000],
+    }
+
+
+def create_opportunity(context, data):
+    clean = clean_opportunity(context, data)
+    opportunity_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat() + "Z"
+    item = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"OPP#{opportunity_id}", "entity": "opportunity", "id": opportunity_id, **clean, "createdAtUtc": now, "updatedAtUtc": now}
+    table.put_item(Item=item)
+    if item.get("contactId"):
+        add_contact_activity(context["workspaceSlug"], item["contactId"], "OpportunityCreated", "Opportunity created", item["title"], {"opportunityId": opportunity_id})
+    return opportunity_shape(item)
+
+
+def update_opportunity(context, opportunity_id, data):
+    current = find_opportunity(context["workspaceSlug"], opportunity_id)
+    if not current:
+        raise ValueError("Opportunity not found.")
+    clean = clean_opportunity(context, data, current)
+    updated = {**current, **clean, "updatedAtUtc": datetime.utcnow().isoformat() + "Z"}
+    table.put_item(Item=updated)
+    if updated.get("contactId") and current.get("stageId") != updated.get("stageId"):
+        add_contact_activity(context["workspaceSlug"], updated["contactId"], "OpportunityMoved", "Opportunity moved", updated["title"], {"opportunityId": opportunity_id, "stageId": updated["stageId"]})
+    return opportunity_shape(updated)
 
 
 def get_workspace(workspace_slug):

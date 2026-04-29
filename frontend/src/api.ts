@@ -99,6 +99,39 @@ export type ContactActivity = {
   metadata?: Record<string, string>;
 };
 
+export type PipelineStage = {
+  id: string;
+  name: string;
+  order: number;
+};
+
+export type Pipeline = {
+  id: string;
+  name: string;
+  description?: string;
+  stages: PipelineStage[];
+  isDefault?: boolean;
+  createdAtUtc?: string;
+  updatedAtUtc?: string;
+};
+
+export type Opportunity = {
+  id: string;
+  pipelineId: string;
+  stageId: string;
+  contactId?: string;
+  contactName?: string;
+  title: string;
+  value: number;
+  currency: string;
+  status: "Open" | "Won" | "Lost";
+  expectedCloseDate?: string;
+  source?: string;
+  notes?: string;
+  createdAtUtc?: string;
+  updatedAtUtc?: string;
+};
+
 export type UnavailabilityDate = {
   date: string;
   reason?: string;

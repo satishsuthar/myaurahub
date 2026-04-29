@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Calendar, Check, Clock, Copy, ExternalLink, Lock, LogOut, MapPin, Plus, Save, Settings, Trash2, Users } from "lucide-react";
 import "./index.css";
-import { api, apiBase, AppointmentType, AvailabilityRule, AuthResponse, AuthUser, Booking, Contact, ContactActivity, ContactCustomField, ContactTask, Slot, ThemeConfig, UnavailabilityDate, clearAuth, getAuthUser, saveAuth, userId } from "./api";
+import { api, apiBase, AppointmentType, AvailabilityRule, AuthResponse, AuthUser, Booking, Contact, ContactActivity, ContactCustomField, ContactTask, Opportunity, Pipeline, Slot, ThemeConfig, UnavailabilityDate, clearAuth, getAuthUser, saveAuth, userId } from "./api";
 
 const defaultAppointment: Omit<AppointmentType, "id" | "isActive"> = {
   assignedUserId: userId,
@@ -64,6 +64,8 @@ const emptyContact: Omit<Contact, "id"> = {
 };
 
 const emptyTask = { title: "", description: "", dueDate: "" };
+const emptyPipeline = { name: "", description: "", stagesText: "New Lead\nQualified\nProposal\nWon" };
+const emptyOpportunity = { title: "", value: 0, currency: "AUD", contactId: "", expectedCloseDate: "", source: "", notes: "" };
 const customFieldTypes = [
   { group: "Text input", options: [["text", "Single line"], ["multiline", "Multiline"], ["textList", "Text box list"]] },
   { group: "Values", options: [["number", "Number"], ["phone", "Phone"], ["currency", "Currency"]] },
@@ -80,6 +82,11 @@ function AdminApp() {
   const [appointments, setAppointments] = useState<AppointmentType[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
+  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [selectedPipelineId, setSelectedPipelineId] = useState<string>("");
+  const [pipelineForm, setPipelineForm] = useState(emptyPipeline);
+  const [opportunityForm, setOpportunityForm] = useState(emptyOpportunity);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [contactForm, setContactForm] = useState<Omit<Contact, "id">>(emptyContact);
   const [contactTasks, setContactTasks] = useState<ContactTask[]>([]);
@@ -90,7 +97,7 @@ function AdminApp() {
   const [unavailability, setUnavailability] = useState<UnavailabilityDate[]>([]);
   const [form, setForm] = useState(defaultAppointment);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"calendars" | "availability" | "bookings" | "schedulingSettings" | "contacts" | "settings" | "profile">("calendars");
+  const [activeTab, setActiveTab] = useState<"calendars" | "availability" | "bookings" | "schedulingSettings" | "contacts" | "opportunities" | "settings" | "profile">("calendars");
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"success" | "error">("success");
   const [savingAppointment, setSavingAppointment] = useState(false);
@@ -106,10 +113,12 @@ function AdminApp() {
   }
 
   async function load() {
-    const [appointmentData, bookingData, contactData, availabilityData, unavailableData, themeData] = await Promise.all([
+    const [appointmentData, bookingData, contactData, pipelineData, opportunityData, availabilityData, unavailableData, themeData] = await Promise.all([
       api<AppointmentType[]>("/api/calendar/appointment-types"),
       api<Booking[]>("/api/calendar/bookings"),
       api<Contact[]>("/api/contacts"),
+      api<Pipeline[]>("/api/opportunities/pipelines"),
+      api<Opportunity[]>("/api/opportunities"),
       api<AvailabilityRule[]>("/api/calendar/availability/me"),
       api<UnavailabilityDate[]>("/api/calendar/unavailability"),
       api<ThemeConfig>("/api/workspace/theme")
@@ -117,6 +126,9 @@ function AdminApp() {
     setAppointments(appointmentData);
     setBookings(bookingData);
     setContacts(contactData);
+    setPipelines(pipelineData);
+    setOpportunities(opportunityData);
+    setSelectedPipelineId((current) => current || pipelineData[0]?.id || "");
     setRules(availabilityData.map((rule) => ({ ...rule, startTime: rule.startTime.slice(0, 5), endTime: rule.endTime.slice(0, 5) })));
     setUnavailability(unavailableData);
     setTheme(themeData);
@@ -316,6 +328,61 @@ function AdminApp() {
     setCustomFieldDraft({ name: "", type: "text", value: "", options: "" });
   }
 
+  async function savePipeline() {
+    const stages = pipelineForm.stagesText.split("\n").map((name) => name.trim()).filter(Boolean).map((name, index) => ({ id: `stage-${index + 1}-${slugifyLocal(name)}`, name, order: index + 1 }));
+    if (!pipelineForm.name.trim() || stages.length === 0) {
+      setMessageTone("error");
+      setMessage("Pipeline name and at least one stage are required.");
+      return;
+    }
+    try {
+      const saved = await api<Pipeline>("/api/opportunities/pipelines", {
+        method: "POST",
+        body: JSON.stringify({ name: pipelineForm.name, description: pipelineForm.description, stages })
+      });
+      setPipelines([...pipelines, saved]);
+      setSelectedPipelineId(saved.id);
+      setPipelineForm(emptyPipeline);
+      setMessageTone("success");
+      setMessage("Pipeline created.");
+    } catch (error) {
+      setMessageTone("error");
+      setMessage(error instanceof Error ? error.message : "Could not save pipeline.");
+    }
+  }
+
+  async function saveOpportunity(stageId?: string) {
+    const pipeline = pipelines.find((item) => item.id === selectedPipelineId);
+    const targetStage = stageId || pipeline?.stages[0]?.id;
+    if (!pipeline || !targetStage || !opportunityForm.title.trim()) {
+      setMessageTone("error");
+      setMessage("Opportunity title and pipeline are required.");
+      return;
+    }
+    try {
+      const contact = contacts.find((item) => item.id === opportunityForm.contactId);
+      const saved = await api<Opportunity>("/api/opportunities", {
+        method: "POST",
+        body: JSON.stringify({ ...opportunityForm, pipelineId: pipeline.id, stageId: targetStage, value: Number(opportunityForm.value), contactName: contact ? `${contact.firstName} ${contact.lastName}`.trim() : "" })
+      });
+      setOpportunities([saved, ...opportunities]);
+      setOpportunityForm(emptyOpportunity);
+      setMessageTone("success");
+      setMessage("Opportunity created.");
+    } catch (error) {
+      setMessageTone("error");
+      setMessage(error instanceof Error ? error.message : "Could not save opportunity.");
+    }
+  }
+
+  async function moveOpportunity(opportunity: Opportunity, stageId: string) {
+    const updated = await api<Opportunity>(`/api/opportunities/${opportunity.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ ...opportunity, stageId })
+    });
+    setOpportunities(opportunities.map((item) => item.id === opportunity.id ? updated : item));
+  }
+
   function editAppointment(item: AppointmentType) {
     setEditingId(item.id);
     setForm({
@@ -363,6 +430,7 @@ function AdminApp() {
         <nav className="space-y-1 text-sm font-medium">
           <NavItem icon={<Calendar size={17} />} label="Scheduling" active={["calendars", "availability", "bookings", "schedulingSettings"].includes(activeTab)} onClick={() => setActiveTab("calendars")} />
           <NavItem icon={<Users size={17} />} label="Contacts" active={activeTab === "contacts"} onClick={() => setActiveTab("contacts")} />
+          <NavItem icon={<Clock size={17} />} label="Opportunities" active={activeTab === "opportunities"} onClick={() => setActiveTab("opportunities")} />
         </nav>
         <nav className="absolute bottom-5 left-4 right-4 space-y-1 text-sm font-medium">
           <NavItem icon={<Settings size={17} />} label="App Settings" active={activeTab === "settings"} onClick={() => setActiveTab("settings")} />
@@ -376,8 +444,8 @@ function AdminApp() {
           <ColorRail />
           <div className="flex items-center justify-between px-5 py-3 lg:px-6">
             <div>
-              <h1 className="display-font text-xl font-bold">{activeTab === "contacts" ? "Contacts" : activeTab === "settings" ? "App Settings" : activeTab === "profile" ? "My Profile" : "Scheduling"}</h1>
-              <p className="text-xs font-medium text-[#64748b]">{activeTab === "contacts" ? "Contacts, custom fields, tasks, and activity timeline." : activeTab === "settings" ? "Workspace-wide branding and application settings." : activeTab === "profile" ? "Your login and workspace access details." : "Appointment types, availability, bookings, and scheduling settings."}</p>
+              <h1 className="display-font text-xl font-bold">{activeTab === "contacts" ? "Contacts" : activeTab === "opportunities" ? "Opportunities" : activeTab === "settings" ? "App Settings" : activeTab === "profile" ? "My Profile" : "Scheduling"}</h1>
+              <p className="text-xs font-medium text-[#64748b]">{activeTab === "contacts" ? "Contacts, custom fields, tasks, and activity timeline." : activeTab === "opportunities" ? "Pipelines, stages, deals, and revenue tracking." : activeTab === "settings" ? "Workspace-wide branding and application settings." : activeTab === "profile" ? "Your login and workspace access details." : "Appointment types, availability, bookings, and scheduling settings."}</p>
             </div>
             <a className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white shadow-sm shadow-blue-200" href={`/book/${authUser.workspaceSlug}/${appointments[0]?.slug ?? "discovery-call"}`}>
               <ExternalLink size={16} /> Open booking page
@@ -643,6 +711,77 @@ function AdminApp() {
                 </Panel>
               </section>}
             </div>
+          </section>}
+
+          {activeTab === "opportunities" && <section className="space-y-5">
+            <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
+              <Panel title="Pipelines" icon={<Clock size={18} />}>
+                <div className="space-y-2">
+                  {pipelines.map((pipeline) => (
+                    <button key={pipeline.id} className={`w-full rounded-md border p-3 text-left text-sm ${selectedPipelineId === pipeline.id ? "border-[var(--theme-primary)] bg-[#f5f9ff]" : "border-[#dde3ec] bg-white hover:bg-[#fbfcff]"}`} onClick={() => setSelectedPipelineId(pipeline.id)}>
+                      <div className="font-bold">{pipeline.name}</div>
+                      <div className="text-xs text-[#64748b]">{pipeline.stages.length} stages</div>
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-4 rounded-md border border-dashed border-[#cbd5e1] bg-white p-3">
+                  <Field label="Pipeline name" value={pipelineForm.name} onChange={(value) => setPipelineForm({ ...pipelineForm, name: value })} />
+                  <textarea className="mt-3 min-h-16 w-full rounded-md border border-[#cbd5e1] p-2 text-sm" placeholder="Description" value={pipelineForm.description} onChange={(event) => setPipelineForm({ ...pipelineForm, description: event.target.value })} />
+                  <textarea className="mt-3 min-h-28 w-full rounded-md border border-[#cbd5e1] p-2 text-sm" placeholder="One stage per line" value={pipelineForm.stagesText} onChange={(event) => setPipelineForm({ ...pipelineForm, stagesText: event.target.value })} />
+                  <button className="mt-3 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={savePipeline}>Create pipeline</button>
+                </div>
+              </Panel>
+
+              <Panel title="New Opportunity" icon={<Plus size={18} />}>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Field label="Title" value={opportunityForm.title} onChange={(value) => setOpportunityForm({ ...opportunityForm, title: value })} />
+                  <Field label="Value" type="number" value={String(opportunityForm.value)} onChange={(value) => setOpportunityForm({ ...opportunityForm, value: Number(value) })} />
+                  <SelectField label="Contact" value={opportunityForm.contactId} options={["", ...contacts.map((contact) => contact.id)]} onChange={(value) => setOpportunityForm({ ...opportunityForm, contactId: value })} />
+                  <Field label="Currency" value={opportunityForm.currency} onChange={(value) => setOpportunityForm({ ...opportunityForm, currency: value.toUpperCase().slice(0, 3) })} />
+                  <Field label="Expected close date" type="date" value={opportunityForm.expectedCloseDate} onChange={(value) => setOpportunityForm({ ...opportunityForm, expectedCloseDate: value })} />
+                  <Field label="Source" value={opportunityForm.source} onChange={(value) => setOpportunityForm({ ...opportunityForm, source: value })} />
+                </div>
+                <textarea className="mt-4 min-h-20 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" placeholder="Notes" value={opportunityForm.notes} onChange={(event) => setOpportunityForm({ ...opportunityForm, notes: event.target.value })} />
+                <button className="mt-4 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={() => saveOpportunity()}>Create opportunity</button>
+              </Panel>
+            </div>
+
+            {(() => {
+              const pipeline = pipelines.find((item) => item.id === selectedPipelineId) ?? pipelines[0];
+              if (!pipeline) return <Panel title="Pipeline Board" icon={<Clock size={18} />}><p className="text-sm text-stone-600">Create a pipeline to start tracking opportunities.</p></Panel>;
+              const pipelineOpportunities = opportunities.filter((item) => item.pipelineId === pipeline.id);
+              return (
+                <Panel title={`${pipeline.name} Board`} icon={<Clock size={18} />}>
+                  <div className="grid gap-3 xl:grid-cols-4">
+                    {pipeline.stages.map((stage) => {
+                      const stageItems = pipelineOpportunities.filter((item) => item.stageId === stage.id);
+                      const stageValue = stageItems.reduce((sum, item) => sum + Number(item.value || 0), 0);
+                      return (
+                        <div key={stage.id} className="rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
+                          <div className="mb-3 flex items-center justify-between gap-2">
+                            <div className="font-bold">{stage.name}</div>
+                            <div className="text-xs font-bold text-[#64748b]">{stageItems.length} · {stageValue.toLocaleString()} {stageItems[0]?.currency ?? "AUD"}</div>
+                          </div>
+                          <div className="space-y-2">
+                            {stageItems.map((opportunity) => (
+                              <div key={opportunity.id} className="rounded-md border border-[#dde3ec] bg-white p-3 text-sm shadow-sm">
+                                <div className="font-bold">{opportunity.title}</div>
+                                <div className="text-xs text-[#64748b]">{opportunity.contactName || "No contact"}</div>
+                                <div className="mt-2 font-bold text-[var(--theme-primary)]">{Number(opportunity.value || 0).toLocaleString()} {opportunity.currency}</div>
+                                <select className="mt-3 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-xs" value={opportunity.stageId} onChange={(event) => moveOpportunity(opportunity, event.target.value)}>
+                                  {pipeline.stages.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+                                </select>
+                              </div>
+                            ))}
+                            {stageItems.length === 0 && <div className="rounded-md border border-dashed border-[#cbd5e1] p-3 text-center text-xs text-[#64748b]">No opportunities</div>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Panel>
+              );
+            })()}
           </section>}
 
           {activeTab === "settings" && <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
@@ -1049,6 +1188,10 @@ function customFieldTypeLabel(type: string) {
     if (found) return `${group.group}: ${found[1]}`;
   }
   return "Text input: Single line";
+}
+
+function slugifyLocal(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "stage";
 }
 
 function NavItem({ icon, label, active = false, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void }) {
