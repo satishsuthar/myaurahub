@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Calendar, Check, Clock, Copy, ExternalLink, Lock, LogOut, MapPin, Plus, Save, Settings, Trash2, Users, Workflow } from "lucide-react";
 import "./index.css";
-import { api, apiBase, AppointmentType, AutomationAction, AutomationRule, AvailabilityRule, AuthResponse, AuthUser, Booking, Contact, ContactActivity, ContactCustomField, ContactTask, Opportunity, Pipeline, Slot, ThemeConfig, UnavailabilityDate, clearAuth, getAuthUser, saveAuth, userId } from "./api";
+import { api, apiBase, AppointmentType, AutomationAction, AutomationRule, AvailabilityRule, AuthResponse, AuthUser, Booking, Contact, ContactActivity, ContactCustomField, ContactTask, Opportunity, Pipeline, SitePage, Slot, ThemeConfig, UnavailabilityDate, clearAuth, getAuthUser, saveAuth, userId } from "./api";
 
 const defaultAppointment: Omit<AppointmentType, "id" | "isActive"> = {
   assignedUserId: userId,
@@ -79,6 +79,9 @@ const automationTriggerOptions = [
   { value: "OpportunityMoved", label: "Opportunity moved", module: "Opportunities" },
   { value: "PipelineCreated", label: "Pipeline created", module: "Opportunities" },
   { value: "AutomationStarted", label: "Automation started", module: "Automations" },
+  { value: "SitePageCreated", label: "Site page created", module: "Sites" },
+  { value: "SitePagePublished", label: "Site page published", module: "Sites" },
+  { value: "SitePageVisited", label: "Site page visited", module: "Sites" },
   { value: "TaskCompleted", label: "Task completed", module: "Tasks" }
 ];
 const automationActionOptions = [
@@ -105,6 +108,19 @@ const emptyAutomation = {
   ],
   isActive: true
 };
+const emptySitePage: Omit<SitePage, "id"> = {
+  name: "New Landing Page",
+  slug: "new-landing-page",
+  status: "Draft",
+  template: "coach",
+  seoTitle: "New Landing Page",
+  seoDescription: "A focused landing page for your business.",
+  sections: [
+    { id: "hero", type: "hero", eyebrow: "For ambitious clients", headline: "Turn interest into booked calls", body: "A polished landing page for your offer, services, and next step.", buttonText: "Book a call", buttonUrl: "/book/myaurahub-test-workspace/discovery-call" },
+    { id: "features", type: "features", headline: "What you get", body: "Clear outcomes, simple process, and a direct path to work together.", items: ["Personalized guidance", "Simple online booking", "Clear next steps"] },
+    { id: "cta", type: "cta", headline: "Ready to start?", body: "Choose a time and we will map out the next best step.", buttonText: "Schedule now", buttonUrl: "/book/myaurahub-test-workspace/discovery-call" }
+  ]
+};
 const customFieldTypes = [
   { group: "Text input", options: [["text", "Single line"], ["multiline", "Multiline"], ["textList", "Text box list"]] },
   { group: "Values", options: [["number", "Number"], ["phone", "Phone"], ["currency", "Currency"]] },
@@ -113,6 +129,8 @@ const customFieldTypes = [
 ];
 
 function Router() {
+  const siteRoute = new URLSearchParams(window.location.search).get("site");
+  if (siteRoute) return <PublicSitePage siteRoute={siteRoute} />;
   return window.location.pathname.startsWith("/book/") ? <PublicBookingPage /> : <AdminApp />;
 }
 
@@ -124,6 +142,7 @@ function AdminApp() {
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [automations, setAutomations] = useState<AutomationRule[]>([]);
+  const [sitePages, setSitePages] = useState<SitePage[]>([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>("");
   const [pipelineForm, setPipelineForm] = useState(emptyPipeline);
   const [opportunityForm, setOpportunityForm] = useState(emptyOpportunity);
@@ -132,6 +151,8 @@ function AdminApp() {
   const [opportunityModalStageId, setOpportunityModalStageId] = useState<string | null>(null);
   const [automationForm, setAutomationForm] = useState(emptyAutomation);
   const [editingAutomationId, setEditingAutomationId] = useState<string | null>(null);
+  const [siteForm, setSiteForm] = useState<Omit<SitePage, "id">>(emptySitePage);
+  const [editingSitePageId, setEditingSitePageId] = useState<string | null>(null);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [contactForm, setContactForm] = useState<Omit<Contact, "id">>(emptyContact);
   const [contactTasks, setContactTasks] = useState<ContactTask[]>([]);
@@ -142,7 +163,7 @@ function AdminApp() {
   const [unavailability, setUnavailability] = useState<UnavailabilityDate[]>([]);
   const [form, setForm] = useState(defaultAppointment);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"calendars" | "availability" | "bookings" | "schedulingSettings" | "contacts" | "opportunities" | "automations" | "settings" | "profile">("calendars");
+  const [activeTab, setActiveTab] = useState<"calendars" | "availability" | "bookings" | "schedulingSettings" | "contacts" | "opportunities" | "automations" | "sites" | "settings" | "profile">("calendars");
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"success" | "error">("success");
   const [savingAppointment, setSavingAppointment] = useState(false);
@@ -158,13 +179,14 @@ function AdminApp() {
   }
 
   async function load() {
-    const [appointmentData, bookingData, contactData, pipelineData, opportunityData, automationData, availabilityData, unavailableData, themeData] = await Promise.all([
+    const [appointmentData, bookingData, contactData, pipelineData, opportunityData, automationData, sitePageData, availabilityData, unavailableData, themeData] = await Promise.all([
       api<AppointmentType[]>("/api/calendar/appointment-types"),
       api<Booking[]>("/api/calendar/bookings"),
       api<Contact[]>("/api/contacts"),
       api<Pipeline[]>("/api/opportunities/pipelines"),
       api<Opportunity[]>("/api/opportunities"),
       api<AutomationRule[]>("/api/automations"),
+      api<SitePage[]>("/api/sites/pages"),
       api<AvailabilityRule[]>("/api/calendar/availability/me"),
       api<UnavailabilityDate[]>("/api/calendar/unavailability"),
       api<ThemeConfig>("/api/workspace/theme")
@@ -175,6 +197,7 @@ function AdminApp() {
     setPipelines(pipelineData);
     setOpportunities(opportunityData);
     setAutomations(automationData);
+    setSitePages(sitePageData);
     setSelectedPipelineId((current) => current || pipelineData[0]?.id || "");
     setRules(availabilityData.map((rule) => ({ ...rule, startTime: rule.startTime.slice(0, 5), endTime: rule.endTime.slice(0, 5) })));
     setUnavailability(unavailableData);
@@ -567,6 +590,66 @@ function AdminApp() {
     setMessage("Automation deleted.");
   }
 
+  function generateSitePage(template: string) {
+    const business = authUser?.workspaceName ?? "Your Business";
+    const presets: Record<string, Omit<SitePage, "id">> = {
+      coach: { ...emptySitePage, name: `${business} Coaching Page`, slug: slugifyLocal(`${business} coaching`), template, seoTitle: `${business} Coaching`, sections: [
+        { id: "hero", type: "hero", eyebrow: "Coaching and consulting", headline: `Grow with ${business}`, body: "A focused page for leads to understand your offer and book the next conversation.", buttonText: "Book a consultation", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call` },
+        { id: "features", type: "features", headline: "How we help", body: "A simple path from interest to clarity.", items: ["Strategy sessions", "Personalized action plans", "Accountability and follow-up"] },
+        { id: "cta", type: "cta", headline: "Take the next step", body: "Book a time that works for you.", buttonText: "Schedule now", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call` }
+      ] },
+      clinic: { ...emptySitePage, name: `${business} Clinic Page`, slug: slugifyLocal(`${business} clinic`), template, seoTitle: `${business} Clinic`, sections: [
+        { id: "hero", type: "hero", eyebrow: "Care made simple", headline: `Book care with ${business}`, body: "Explain services, build trust, and help patients book the right appointment.", buttonText: "Book appointment", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call` },
+        { id: "features", type: "features", headline: "Services", body: "Show the most important reasons to choose your practice.", items: ["Initial consultations", "Treatment plans", "Follow-up support"] },
+        { id: "cta", type: "cta", headline: "Ready to feel better?", body: "Choose a time online.", buttonText: "Find a time", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call` }
+      ] },
+      personal: { ...emptySitePage, name: `${business} Personal Brand Page`, slug: slugifyLocal(`${business} personal brand`), template, seoTitle: business, sections: [
+        { id: "hero", type: "hero", eyebrow: "Personal brand", headline: `Work with ${business}`, body: "A polished page for your audience, offers, and booking links.", buttonText: "Start here", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call` },
+        { id: "features", type: "features", headline: "What I do", body: "Highlight your core offers and credibility.", items: ["Speaking and workshops", "Consulting", "Digital products"] },
+        { id: "cta", type: "cta", headline: "Let's talk", body: "Book a short call to explore fit.", buttonText: "Book now", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call` }
+      ] }
+    };
+    setSiteForm(presets[template] ?? presets.coach);
+    setEditingSitePageId(null);
+    setActiveTab("sites");
+  }
+
+  function updateSiteSection(id: string, patch: Partial<SitePage["sections"][number]>) {
+    setSiteForm({ ...siteForm, sections: siteForm.sections.map((section) => section.id === id ? { ...section, ...patch } : section) });
+  }
+
+  async function saveSitePage() {
+    if (!siteForm.name.trim() || !siteForm.slug.trim()) {
+      setMessageTone("error");
+      setMessage("Page name and slug are required.");
+      return;
+    }
+    const saved = await api<SitePage>(editingSitePageId ? `/api/sites/pages/${editingSitePageId}` : "/api/sites/pages", {
+      method: editingSitePageId ? "PUT" : "POST",
+      body: JSON.stringify(siteForm)
+    });
+    setSitePages(editingSitePageId ? sitePages.map((page) => page.id === saved.id ? saved : page) : [saved, ...sitePages]);
+    setEditingSitePageId(saved.id);
+    setMessageTone("success");
+    setMessage("Page saved.");
+  }
+
+  function editSitePage(page: SitePage) {
+    setEditingSitePageId(page.id);
+    setSiteForm({ name: page.name, slug: page.slug, status: page.status, template: page.template, seoTitle: page.seoTitle, seoDescription: page.seoDescription, sections: page.sections });
+    setActiveTab("sites");
+  }
+
+  async function deleteSitePage(page: SitePage) {
+    if (!window.confirm(`Delete page "${page.name}"?`)) return;
+    await api(`/api/sites/pages/${page.id}`, { method: "DELETE" });
+    setSitePages(sitePages.filter((item) => item.id !== page.id));
+    if (editingSitePageId === page.id) {
+      setEditingSitePageId(null);
+      setSiteForm(emptySitePage);
+    }
+  }
+
   function editAppointment(item: AppointmentType) {
     setEditingId(item.id);
     setForm({
@@ -616,6 +699,7 @@ function AdminApp() {
           <NavItem icon={<Users size={17} />} label="Contacts" active={activeTab === "contacts"} onClick={() => setActiveTab("contacts")} />
           <NavItem icon={<Clock size={17} />} label="Opportunities" active={activeTab === "opportunities"} onClick={() => setActiveTab("opportunities")} />
           <NavItem icon={<Workflow size={17} />} label="Automations" active={activeTab === "automations"} onClick={() => setActiveTab("automations")} />
+          <NavItem icon={<ExternalLink size={17} />} label="Sites" active={activeTab === "sites"} onClick={() => setActiveTab("sites")} />
         </nav>
         <nav className="absolute bottom-5 left-4 right-4 space-y-1 text-sm font-medium">
           <NavItem icon={<Settings size={17} />} label="App Settings" active={activeTab === "settings"} onClick={() => setActiveTab("settings")} />
@@ -629,8 +713,8 @@ function AdminApp() {
           <ColorRail />
           <div className="flex items-center justify-between px-5 py-3 lg:px-6">
             <div>
-              <h1 className="display-font text-xl font-bold">{activeTab === "contacts" ? "Contacts" : activeTab === "opportunities" ? "Opportunities" : activeTab === "automations" ? "Automations" : activeTab === "settings" ? "App Settings" : activeTab === "profile" ? "My Profile" : "Scheduling"}</h1>
-              <p className="text-xs font-medium text-[#64748b]">{activeTab === "contacts" ? "Contacts, custom fields, tasks, and activity timeline." : activeTab === "opportunities" ? "Pipelines, stages, deals, and revenue tracking." : activeTab === "automations" ? "Workflow rules that react to bookings, contacts, pages, tasks, and opportunities." : activeTab === "settings" ? "Workspace-wide branding and application settings." : activeTab === "profile" ? "Your login and workspace access details." : "Appointment types, availability, bookings, and scheduling settings."}</p>
+              <h1 className="display-font text-xl font-bold">{activeTab === "contacts" ? "Contacts" : activeTab === "opportunities" ? "Opportunities" : activeTab === "automations" ? "Automations" : activeTab === "sites" ? "Sites" : activeTab === "settings" ? "App Settings" : activeTab === "profile" ? "My Profile" : "Scheduling"}</h1>
+              <p className="text-xs font-medium text-[#64748b]">{activeTab === "contacts" ? "Contacts, custom fields, tasks, and activity timeline." : activeTab === "opportunities" ? "Pipelines, stages, deals, and revenue tracking." : activeTab === "automations" ? "Workflow rules that react to bookings, contacts, pages, tasks, and opportunities." : activeTab === "sites" ? "Landing pages, mini-sites, and WYSIWYG page editing." : activeTab === "settings" ? "Workspace-wide branding and application settings." : activeTab === "profile" ? "Your login and workspace access details." : "Appointment types, availability, bookings, and scheduling settings."}</p>
             </div>
             <a className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white shadow-sm shadow-blue-200" href={`/book/${authUser.workspaceSlug}/${appointments[0]?.slug ?? "discovery-call"}`}>
               <ExternalLink size={16} /> Open booking page
@@ -1154,6 +1238,64 @@ function AdminApp() {
             </Panel>
           </section>}
 
+          {activeTab === "sites" && <section className="grid gap-5 xl:grid-cols-[380px_1fr]">
+            <div className="space-y-5">
+              <Panel title="Pages" icon={<ExternalLink size={18} />}>
+                <div className="mb-4 grid grid-cols-3 gap-2">
+                  {["coach", "clinic", "personal"].map((template) => <button key={template} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-bold capitalize" onClick={() => generateSitePage(template)}>{template}</button>)}
+                </div>
+                <div className="space-y-2">
+                  {sitePages.length === 0 && <p className="text-sm text-stone-600">No pages yet. Generate a starter page above.</p>}
+                  {sitePages.map((page) => (
+                    <button key={page.id} className={`w-full rounded-md border p-3 text-left text-sm ${editingSitePageId === page.id ? "border-[var(--theme-primary)] bg-[#f5f9ff]" : "border-[#dde3ec] bg-white"}`} onClick={() => editSitePage(page)}>
+                      <div className="font-black">{page.name}</div>
+                      <div className="text-xs text-[#64748b]">/{page.slug} - {page.status}</div>
+                    </button>
+                  ))}
+                </div>
+              </Panel>
+              <Panel title="Page Settings" icon={<Settings size={18} />}>
+                <div className="space-y-3">
+                  <Field label="Name" value={siteForm.name} onChange={(value) => setSiteForm({ ...siteForm, name: value, slug: editingSitePageId ? siteForm.slug : slugifyLocal(value) })} />
+                  <Field label="Slug" value={siteForm.slug} onChange={(value) => setSiteForm({ ...siteForm, slug: slugifyLocal(value) })} />
+                  <label className="text-sm font-bold text-[#334155]">Status
+                    <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={siteForm.status} onChange={(event) => setSiteForm({ ...siteForm, status: event.target.value as "Draft" | "Published" })}>
+                      <option value="Draft">Draft</option>
+                      <option value="Published">Published</option>
+                    </select>
+                  </label>
+                  <Field label="SEO title" value={siteForm.seoTitle ?? ""} onChange={(value) => setSiteForm({ ...siteForm, seoTitle: value })} />
+                  <textarea className="min-h-20 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" placeholder="SEO description" value={siteForm.seoDescription ?? ""} onChange={(event) => setSiteForm({ ...siteForm, seoDescription: event.target.value })} />
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveSitePage}><Save size={16} /> Save page</button>
+                  {editingSitePageId && <button className="rounded-md border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-bold text-rose-700" onClick={() => sitePages.find((page) => page.id === editingSitePageId) && deleteSitePage(sitePages.find((page) => page.id === editingSitePageId)!)}>Delete</button>}
+                </div>
+                {editingSitePageId && <a className="mt-3 inline-flex items-center gap-2 text-sm font-bold text-[var(--theme-primary)]" target="_blank" href={`/?site=${authUser.workspaceSlug}/${siteForm.slug}`}><ExternalLink size={15} /> Open published URL</a>}
+              </Panel>
+            </div>
+            <Panel title="WYSIWYG Editor" icon={<ExternalLink size={18} />}>
+              <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
+                <div className="space-y-4">
+                  {siteForm.sections.map((section) => (
+                    <div key={section.id} className="rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
+                      <div className="mb-3 text-sm font-black capitalize">{section.type} section</div>
+                      <Field label="Eyebrow" value={section.eyebrow ?? ""} onChange={(value) => updateSiteSection(section.id, { eyebrow: value })} />
+                      <Field label="Headline" value={section.headline} onChange={(value) => updateSiteSection(section.id, { headline: value })} />
+                      <textarea className="mt-3 min-h-20 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" value={section.body} onChange={(event) => updateSiteSection(section.id, { body: event.target.value })} />
+                      {section.type === "features" && <textarea className="mt-3 min-h-20 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" value={(section.items ?? []).join("\n")} onChange={(event) => updateSiteSection(section.id, { items: event.target.value.split("\n").filter(Boolean) })} />}
+                      {section.type !== "features" && <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <Field label="Button text" value={section.buttonText ?? ""} onChange={(value) => updateSiteSection(section.id, { buttonText: value })} />
+                        <Field label="Button URL" value={section.buttonUrl ?? ""} onChange={(value) => updateSiteSection(section.id, { buttonUrl: value })} />
+                      </div>}
+                    </div>
+                  ))}
+                </div>
+                <SitePagePreview page={siteForm} theme={theme} />
+              </div>
+            </Panel>
+          </section>}
+
           {activeTab === "settings" && <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
             <Panel title="Application Settings" icon={<Settings size={18} />}>
               <div className="space-y-2 text-sm text-stone-600">
@@ -1273,6 +1415,25 @@ function AuthPage({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => vo
       </section>
     </main>
   );
+}
+
+function PublicSitePage({ siteRoute }: { siteRoute: string }) {
+  const [workspaceSlug, pageSlug] = siteRoute.split("/");
+  const [page, setPage] = useState<SitePage | null>(null);
+  const [theme, setTheme] = useState<ThemeConfig>(defaultTheme);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    fetch(`${apiBase}/api/public/sites/${workspaceSlug}/${pageSlug}?t=${Date.now()}`, { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Page not found.");
+        return response.json();
+      })
+      .then((data) => { setPage(data.page); setTheme(data.theme ?? defaultTheme); })
+      .catch((err) => setError(err.message));
+  }, [workspaceSlug, pageSlug]);
+  if (error) return <main className="flex min-h-screen items-center justify-center bg-[#f8fafc] text-[#16202a]">{error}</main>;
+  if (!page) return <main className="flex min-h-screen items-center justify-center bg-[#f8fafc] text-[#16202a]">Loading...</main>;
+  return <main className="min-h-screen bg-[var(--theme-background)]" style={themeStyle(theme)}><SitePagePreview page={page} theme={theme} publicMode /></main>;
 }
 
 function PublicBookingPage() {
@@ -1670,6 +1831,45 @@ function AutomationCanvas({
           </React.Fragment>
         );})}
       </div>
+    </div>
+  );
+}
+
+function SitePagePreview({ page, theme, publicMode = false }: { page: Omit<SitePage, "id"> | SitePage; theme: ThemeConfig; publicMode?: boolean }) {
+  const hero = page.sections.find((section) => section.type === "hero") ?? page.sections[0];
+  const features = page.sections.find((section) => section.type === "features");
+  const cta = page.sections.find((section) => section.type === "cta");
+  return (
+    <div className={`${publicMode ? "" : "max-h-[760px] overflow-auto rounded-md border border-[#dde3ec]"} bg-[var(--theme-background)] text-[var(--theme-text)]`} style={themeStyle(theme)}>
+      <section className="px-6 py-14 md:px-10 md:py-20">
+        <div className="mx-auto max-w-5xl">
+          <div className="mb-5 flex gap-1.5">
+            <span className="h-3 w-3 rounded-full bg-[var(--theme-primary)]" />
+            <span className="h-3 w-3 rounded-full bg-[var(--theme-secondary)]" />
+            <span className="h-3 w-3 rounded-full bg-[var(--theme-accent)]" />
+          </div>
+          {hero?.eyebrow && <div className="mb-3 text-sm font-black uppercase tracking-wide text-[var(--theme-primary)]">{hero.eyebrow}</div>}
+          <h1 className="display-font max-w-3xl text-4xl font-black leading-tight md:text-6xl">{hero?.headline}</h1>
+          <p className="mt-5 max-w-2xl text-lg leading-8 text-[var(--theme-muted)]">{hero?.body}</p>
+          {hero?.buttonText && <a className="mt-8 inline-flex rounded-md bg-[var(--theme-primary)] px-5 py-3 text-sm font-black text-white" href={hero.buttonUrl || "#"}>{hero.buttonText}</a>}
+        </div>
+      </section>
+      {features && <section className="bg-white px-6 py-12 md:px-10">
+        <div className="mx-auto max-w-5xl">
+          <h2 className="display-font text-3xl font-black">{features.headline}</h2>
+          <p className="mt-3 max-w-2xl text-[var(--theme-muted)]">{features.body}</p>
+          <div className="mt-8 grid gap-3 md:grid-cols-3">
+            {(features.items ?? []).map((item) => <div key={item} className="rounded-md border border-[#dde3ec] bg-[#fbfcff] p-4 font-bold">{item}</div>)}
+          </div>
+        </div>
+      </section>}
+      {cta && <section className="px-6 py-12 md:px-10">
+        <div className="mx-auto max-w-5xl rounded-md bg-[var(--theme-primary)] p-8 text-white">
+          <h2 className="display-font text-3xl font-black">{cta.headline}</h2>
+          <p className="mt-3 max-w-2xl text-white/85">{cta.body}</p>
+          {cta.buttonText && <a className="mt-6 inline-flex rounded-md bg-white px-5 py-3 text-sm font-black text-[var(--theme-primary)]" href={cta.buttonUrl || "#"}>{cta.buttonText}</a>}
+        </div>
+      </section>}
     </div>
   );
 }

@@ -77,6 +77,8 @@ def handler(event, _context):
             return response(200, auth_context(event))
         if path.startswith("/api/public/booking/"):
             return handle_public(method, path, query, body)
+        if path.startswith("/api/public/sites/") and method == "GET":
+            return response(200, public_site_page(path))
 
         context = auth_context(event)
         if path == "/api/calendar/appointment-types" and method == "GET":
@@ -130,6 +132,16 @@ def handler(event, _context):
         if path.startswith("/api/automations/") and method == "DELETE":
             automation_id = path.split("/")[3]
             return response(200, delete_automation(context, automation_id))
+        if path == "/api/sites/pages" and method == "GET":
+            return response(200, list_site_pages(context["workspaceSlug"]))
+        if path == "/api/sites/pages" and method == "POST":
+            return response(201, create_site_page(context, body))
+        if path.startswith("/api/sites/pages/") and method == "PUT":
+            page_id = path.split("/")[4]
+            return response(200, update_site_page(context, page_id, body))
+        if path.startswith("/api/sites/pages/") and method == "DELETE":
+            page_id = path.split("/")[4]
+            return response(200, delete_site_page(context, page_id))
         if path.startswith("/api/contacts/"):
             parts = path.strip("/").split("/")
             contact_id = parts[2] if len(parts) > 2 else ""
@@ -771,6 +783,9 @@ VALID_AUTOMATION_TRIGGERS = {
     "OpportunityMoved",
     "PipelineCreated",
     "AutomationStarted",
+    "SitePageCreated",
+    "SitePagePublished",
+    "SitePageVisited",
     "TaskCompleted",
 }
 
@@ -867,6 +882,107 @@ def delete_automation(context, automation_id):
         raise ValueError("Automation not found.")
     table.delete_item(Key={"pk": workspace_pk(context["workspaceSlug"]), "sk": f"AUTOMATION#{automation_id}"})
     return {"deleted": True, "id": automation_id}
+
+
+def site_page_shape(item):
+    return {k: item.get(k) for k in ["id", "name", "slug", "status", "template", "seoTitle", "seoDescription", "sections", "createdAtUtc", "updatedAtUtc"]}
+
+
+def list_site_pages(workspace_slug):
+    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("SITEPAGE#"))
+    return sorted([site_page_shape(item) for item in result.get("Items", [])], key=lambda item: item.get("updatedAtUtc", item.get("createdAtUtc", "")), reverse=True)
+
+
+def find_site_page(workspace_slug, page_id):
+    return table.get_item(Key={"pk": workspace_pk(workspace_slug), "sk": f"SITEPAGE#{page_id}"}).get("Item")
+
+
+def find_site_page_by_slug(workspace_slug, slug):
+    for page in list_site_pages(workspace_slug):
+        if page.get("slug") == slug:
+            return page
+    return None
+
+
+def clean_site_sections(sections):
+    cleaned = []
+    for index, section in enumerate(sections or []):
+        section_type = str(section.get("type", "hero")).strip()
+        if section_type not in ["hero", "features", "cta"]:
+            section_type = "hero"
+        cleaned.append({
+            "id": str(section.get("id") or f"section-{index + 1}")[:80],
+            "type": section_type,
+            "eyebrow": str(section.get("eyebrow", "") or "").strip()[:120],
+            "headline": str(section.get("headline", "") or "").strip()[:180],
+            "body": str(section.get("body", "") or "").strip()[:1500],
+            "buttonText": str(section.get("buttonText", "") or "").strip()[:80],
+            "buttonUrl": str(section.get("buttonUrl", "") or "").strip()[:300],
+            "items": [str(item).strip()[:160] for item in section.get("items", [])[:12] if str(item).strip()],
+        })
+    if not cleaned:
+        raise ValueError("At least one page section is required.")
+    return cleaned
+
+
+def clean_site_page(data, current=None):
+    name = str(data.get("name", current.get("name", "") if current else "")).strip()
+    slug = slugify(str(data.get("slug", current.get("slug", name) if current else name))).strip()
+    if not name or not slug:
+        raise ValueError("Page name and slug are required.")
+    status = str(data.get("status", current.get("status", "Draft") if current else "Draft"))
+    return {
+        "name": name[:140],
+        "slug": slug[:80],
+        "status": status if status in ["Draft", "Published"] else "Draft",
+        "template": str(data.get("template", current.get("template", "coach") if current else "coach"))[:40],
+        "seoTitle": str(data.get("seoTitle", current.get("seoTitle", name) if current else name) or "").strip()[:160],
+        "seoDescription": str(data.get("seoDescription", current.get("seoDescription", "") if current else "") or "").strip()[:300],
+        "sections": clean_site_sections(data.get("sections", current.get("sections", []) if current else [])),
+    }
+
+
+def create_site_page(context, data):
+    page_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat() + "Z"
+    clean = clean_site_page(data)
+    existing = find_site_page_by_slug(context["workspaceSlug"], clean["slug"])
+    if existing:
+        raise ConflictError("A page with this slug already exists.")
+    item = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"SITEPAGE#{page_id}", "entity": "sitePage", "id": page_id, **clean, "createdAtUtc": now, "updatedAtUtc": now}
+    table.put_item(Item=item)
+    return site_page_shape(item)
+
+
+def update_site_page(context, page_id, data):
+    current = find_site_page(context["workspaceSlug"], page_id)
+    if not current:
+        raise ValueError("Page not found.")
+    clean = clean_site_page(data, current)
+    existing = find_site_page_by_slug(context["workspaceSlug"], clean["slug"])
+    if existing and existing.get("id") != page_id:
+        raise ConflictError("A page with this slug already exists.")
+    updated = {**current, **clean, "updatedAtUtc": datetime.utcnow().isoformat() + "Z"}
+    table.put_item(Item=updated)
+    return site_page_shape(updated)
+
+
+def delete_site_page(context, page_id):
+    current = find_site_page(context["workspaceSlug"], page_id)
+    if not current:
+        raise ValueError("Page not found.")
+    table.delete_item(Key={"pk": workspace_pk(context["workspaceSlug"]), "sk": f"SITEPAGE#{page_id}"})
+    return {"deleted": True, "id": page_id}
+
+
+def public_site_page(path):
+    parts = path.strip("/").split("/")
+    workspace_slug = parts[3] if len(parts) > 3 else ""
+    page_slug = parts[4] if len(parts) > 4 else ""
+    page = find_site_page_by_slug(workspace_slug, page_slug)
+    if not page or page.get("status") != "Published":
+        raise ValueError("Page not found.")
+    return {"page": page, "theme": get_theme(workspace_slug)}
 
 
 def get_workspace(workspace_slug):

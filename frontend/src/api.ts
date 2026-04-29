@@ -155,6 +155,30 @@ export type AutomationRule = {
   updatedAtUtc?: string;
 };
 
+export type SiteSection = {
+  id: string;
+  type: "hero" | "features" | "cta";
+  eyebrow?: string;
+  headline: string;
+  body: string;
+  buttonText?: string;
+  buttonUrl?: string;
+  items?: string[];
+};
+
+export type SitePage = {
+  id: string;
+  name: string;
+  slug: string;
+  status: "Draft" | "Published";
+  template: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  sections: SiteSection[];
+  createdAtUtc?: string;
+  updatedAtUtc?: string;
+};
+
 export type UnavailabilityDate = {
   date: string;
   reason?: string;
