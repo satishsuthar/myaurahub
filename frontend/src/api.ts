@@ -99,7 +99,14 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`${response.status} ${error || response.statusText}`);
+    let message = error || `${response.status} ${response.statusText}`;
+    try {
+      const parsed = JSON.parse(error) as { error?: string };
+      message = parsed.error || message;
+    } catch {
+      // Keep the original response text when the API did not return JSON.
+    }
+    throw new Error(message);
   }
 
   if (response.status === 204) {

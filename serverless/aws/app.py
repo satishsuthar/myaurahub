@@ -30,7 +30,7 @@ def response(status, body=None):
             "content-type": "application/json",
             "access-control-allow-origin": "*",
             "access-control-allow-methods": "GET,POST,PUT,OPTIONS",
-            "access-control-allow-headers": "content-type,x-workspace-id,x-user-id",
+            "access-control-allow-headers": "authorization,content-type,x-workspace-id,x-user-id",
         },
         "body": "" if body is None else json.dumps(body, default=json_default),
     }
@@ -214,6 +214,9 @@ def list_appointment_types(workspace_slug=WORKSPACE_SLUG):
 
 def create_appointment_type(context, data):
     slug = data["slug"].strip().lower()
+    existing = table.get_item(Key={"pk": workspace_pk(context["workspaceSlug"]), "sk": appt_sk(slug)}).get("Item")
+    if existing:
+        raise ValueError("This public link slug already exists. Edit the existing appointment type or choose a different slug.")
     workspace = table.get_item(Key={"pk": workspace_pk(context["workspaceSlug"]), "sk": "META"}).get("Item") or {}
     item = {
         "pk": workspace_pk(context["workspaceSlug"]), "sk": appt_sk(slug), "entity": "appointmentType",

@@ -36,6 +36,8 @@ function AdminApp() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"calendars" | "availability" | "bookings" | "settings">("calendars");
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"success" | "error">("success");
+  const [savingAppointment, setSavingAppointment] = useState(false);
 
   if (!authUser) {
     return <AuthPage onAuthenticated={setAuthUser} />;
@@ -66,14 +68,34 @@ function AdminApp() {
   }, [authUser]);
 
   async function saveAppointment() {
-    await api<AppointmentType>(editingId ? `/api/calendar/appointment-types/${editingId}` : "/api/calendar/appointment-types", {
-      method: editingId ? "PUT" : "POST",
-      body: JSON.stringify(form)
-    });
-    setMessage(editingId ? "Appointment type updated. Customer calendar will use the new settings." : "Appointment type created.");
-    setEditingId(null);
-    setForm(defaultAppointment);
-    await load();
+    if (!form.name.trim() || !form.slug.trim()) {
+      setMessageTone("error");
+      setMessage("Name and slug are required.");
+      return;
+    }
+
+    setSavingAppointment(true);
+    setMessage("");
+    try {
+      await api<AppointmentType>(editingId ? `/api/calendar/appointment-types/${editingId}` : "/api/calendar/appointment-types", {
+        method: editingId ? "PUT" : "POST",
+        body: JSON.stringify({
+          ...form,
+          name: form.name.trim(),
+          slug: form.slug.trim().toLowerCase()
+        })
+      });
+      setMessageTone("success");
+      setMessage(editingId ? "Appointment type updated. Customer calendar will use the new settings." : "Appointment type created.");
+      setEditingId(null);
+      setForm({ ...defaultAppointment, slug: `strategy-session-${Date.now().toString().slice(-5)}` });
+      await load();
+    } catch (error) {
+      setMessageTone("error");
+      setMessage(error instanceof Error ? error.message : "Could not save appointment type.");
+    } finally {
+      setSavingAppointment(false);
+    }
   }
 
   async function saveAvailability() {
@@ -153,7 +175,7 @@ function AdminApp() {
           </div>
         </header>
 
-        {message && <div className="mx-5 mt-5 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 lg:mx-8">{message}</div>}
+        {message && <div className={`mx-5 mt-5 rounded-md border px-4 py-3 text-sm lg:mx-8 ${messageTone === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-rose-200 bg-rose-50 text-rose-900"}`}>{message}</div>}
 
         <div className="px-5 py-5 lg:px-6">
           {activeTab === "calendars" && <section className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
@@ -212,8 +234,8 @@ function AdminApp() {
               </div>
               <textarea className="mt-4 min-h-24 w-full rounded-md border border-stone-300 bg-white p-3 text-sm" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
               <div className="mt-4 flex gap-2">
-                <button className="inline-flex items-center gap-2 rounded-md bg-coral px-4 py-2 text-sm font-semibold text-white" onClick={saveAppointment}>
-                  <Save size={16} /> {editingId ? "Update appointment type" : "Save appointment type"}
+                <button type="button" disabled={savingAppointment} className="inline-flex items-center gap-2 rounded-md bg-coral px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" onClick={saveAppointment}>
+                  <Save size={16} /> {savingAppointment ? "Saving..." : editingId ? "Update appointment type" : "Save appointment type"}
                 </button>
                 {editingId && <button className="rounded-md border border-stone-300 px-4 py-2 text-sm" onClick={() => { setEditingId(null); setForm(defaultAppointment); }}>Cancel</button>}
               </div>

@@ -67,7 +67,7 @@ if (-not (Test-AwsCommand { aws lambda get-function --region $AwsRegion --functi
 $functionArn = "arn:aws:lambda:${AwsRegion}:${AccountId}:function:$functionName"
 $apiId = aws apigatewayv2 get-apis --region $AwsRegion --query "Items[?Name=='$apiName'].ApiId | [0]" --output text
 if ($apiId -eq "None") {
-  $apiId = aws apigatewayv2 create-api --region $AwsRegion --name $apiName --protocol-type HTTP --cors-configuration "AllowOrigins=['*'],AllowMethods=['GET','POST','PUT','OPTIONS'],AllowHeaders=['content-type','x-workspace-id','x-user-id']" --tags Project=calbook,App=calbook --query ApiId --output text
+  $apiId = aws apigatewayv2 create-api --region $AwsRegion --name $apiName --protocol-type HTTP --cors-configuration "AllowOrigins=['*'],AllowMethods=['GET','POST','PUT','OPTIONS'],AllowHeaders=['authorization','content-type','x-workspace-id','x-user-id']" --tags Project=calbook,App=calbook --query ApiId --output text
   $integrationId = aws apigatewayv2 create-integration --region $AwsRegion --api-id $apiId --integration-type AWS_PROXY --integration-uri $functionArn --payload-format-version 2.0 --query IntegrationId --output text
   aws apigatewayv2 create-route --region $AwsRegion --api-id $apiId --route-key "ANY /{proxy+}" --target "integrations/$integrationId"
   aws apigatewayv2 create-route --region $AwsRegion --api-id $apiId --route-key "ANY /" --target "integrations/$integrationId"
