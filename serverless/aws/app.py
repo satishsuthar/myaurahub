@@ -43,7 +43,7 @@ def response(status, body=None):
         "headers": {
             "content-type": "application/json",
             "access-control-allow-origin": "*",
-            "access-control-allow-methods": "GET,POST,PUT,OPTIONS",
+            "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
             "access-control-allow-headers": "authorization,content-type,x-workspace-id,x-user-id",
         },
         "body": "" if body is None else json.dumps(body, default=json_default),
@@ -86,6 +86,9 @@ def handler(event, _context):
         if path.startswith("/api/calendar/appointment-types/") and method == "PUT":
             appointment_id = path.split("/")[4]
             return response(200, update_appointment_type(context, appointment_id, body))
+        if path.startswith("/api/calendar/appointment-types/") and method == "DELETE":
+            appointment_id = path.split("/")[4]
+            return response(200, delete_appointment_type(context, appointment_id))
         if path == "/api/calendar/bookings" and method == "GET":
             return response(200, list_bookings(context["workspaceSlug"]))
         if path == "/api/calendar/availability/me" and method == "GET":
@@ -292,6 +295,17 @@ def update_appointment_type(context, appointment_id, data):
         table.delete_item(Key=old_key)
     table.put_item(Item=updated)
     return public_appt_shape(updated)
+
+
+def delete_appointment_type(context, appointment_id):
+    current = find_appointment_by_id(context["workspaceSlug"], appointment_id)
+    if not current:
+        raise ValueError("Appointment type not found.")
+    existing_bookings = [booking for booking in list_bookings(context["workspaceSlug"]) if booking.get("appointmentTypeId") == appointment_id]
+    if existing_bookings:
+        raise ConflictError("This appointment type has bookings, so it cannot be permanently deleted. Make it inactive instead.")
+    table.delete_item(Key={"pk": current["pk"], "sk": current["sk"]})
+    return {"deleted": True, "id": appointment_id}
 
 
 def find_appointment_by_id(workspace_slug, appointment_id):

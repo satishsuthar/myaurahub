@@ -127,6 +127,40 @@ function AdminApp() {
     }
   }
 
+  async function toggleAppointmentActive(item: AppointmentType) {
+    setMessage("");
+    try {
+      await api<AppointmentType>(`/api/calendar/appointment-types/${item.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ ...item, isActive: !item.isActive })
+      });
+      setMessageTone("success");
+      setMessage(item.isActive ? "Appointment type made inactive. Its public booking page is no longer available." : "Appointment type reactivated.");
+      await load();
+    } catch (error) {
+      setMessageTone("error");
+      setMessage(error instanceof Error ? error.message : "Could not update appointment status.");
+    }
+  }
+
+  async function deleteAppointment(item: AppointmentType) {
+    if (!window.confirm(`Delete "${item.name}" permanently? This is only allowed when it has no bookings.`)) return;
+    setMessage("");
+    try {
+      await api(`/api/calendar/appointment-types/${item.id}`, { method: "DELETE" });
+      setMessageTone("success");
+      setMessage("Appointment type deleted.");
+      if (editingId === item.id) {
+        setEditingId(null);
+        setForm(defaultAppointment);
+      }
+      await load();
+    } catch (error) {
+      setMessageTone("error");
+      setMessage(error instanceof Error ? error.message : "Could not delete appointment type.");
+    }
+  }
+
   async function saveAvailability() {
     if (!authUser) return;
     setSavingAvailability(true);
@@ -278,8 +312,12 @@ function AdminApp() {
                         <td className="px-4 py-3">
                           <span className="rounded bg-[#e6f7ef] px-2 py-1 text-xs font-bold text-[#137333]">{item.isActive ? "Active" : "Inactive"}</span>
                         </td>
-                        <td className="px-4 py-3 text-right">
-                          <button className="rounded-md border border-[#cbd5e1] bg-white px-3 py-1 text-xs font-bold hover:border-[#2563eb] hover:text-[#2563eb]" onClick={() => editAppointment(item)}>Edit</button>
+                        <td className="px-4 py-3">
+                          <div className="flex justify-end gap-2">
+                            <button className="rounded-md border border-[#cbd5e1] bg-white px-3 py-1 text-xs font-bold hover:border-[#2563eb] hover:text-[#2563eb]" onClick={() => editAppointment(item)}>Edit</button>
+                            <button className="rounded-md border border-[#cbd5e1] bg-white px-3 py-1 text-xs font-bold hover:border-[#f59e0b] hover:text-[#a16207]" onClick={() => toggleAppointmentActive(item)}>{item.isActive ? "Make inactive" : "Activate"}</button>
+                            <button className="rounded-md border border-rose-200 bg-white px-3 py-1 text-xs font-bold text-rose-700 hover:bg-rose-50" onClick={() => deleteAppointment(item)}>Delete</button>
+                          </div>
                         </td>
                       </tr>
                     ))}
