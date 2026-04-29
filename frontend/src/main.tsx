@@ -472,9 +472,16 @@ function AdminApp() {
   }
 
   function addAutomationAction() {
+    addAutomationActionAfter(automationForm.actions.length - 1);
+  }
+
+  function addAutomationActionAfter(index: number) {
+    const nextAction = { id: `action-${Date.now()}`, type: "InternalNotification", configText: "message=New automation event" };
+    const nextActions = [...automationForm.actions];
+    nextActions.splice(index + 1, 0, nextAction);
     setAutomationForm({
       ...automationForm,
-      actions: [...automationForm.actions, { id: `action-${Date.now()}`, type: "InternalNotification", configText: "message=New automation event" }]
+      actions: nextActions
     });
   }
 
@@ -1038,12 +1045,17 @@ function AdminApp() {
 
           {activeTab === "automations" && <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
             <Panel title={editingAutomationId ? "Edit Automation" : "Create Automation"} icon={<Workflow size={18} />}>
-              <AutomationDiagram
+              <AutomationCanvas
                 title={automationForm.name || "New automation"}
-                triggerLabels={automationForm.triggers.map((trigger) => automationTriggerOptions.find((item) => item.value === trigger.type)?.label ?? trigger.type)}
-                filterLabels={automationForm.triggers.filter((trigger) => trigger.filterKey).map((trigger) => `${trigger.filterKey} = ${trigger.filterValue || "any"}`)}
-                actions={automationForm.actions.map((action) => automationActionOptions.find((item) => item.value === action.type)?.label ?? action.type)}
+                triggers={automationForm.triggers}
+                actions={automationForm.actions}
                 isActive={automationForm.isActive}
+                onAddTrigger={addAutomationTrigger}
+                onUpdateTrigger={updateAutomationTrigger}
+                onRemoveTrigger={(id) => setAutomationForm({ ...automationForm, triggers: automationForm.triggers.filter((item) => item.id !== id) })}
+                onAddActionAfter={addAutomationActionAfter}
+                onUpdateAction={updateAutomationAction}
+                onRemoveAction={(id) => setAutomationForm({ ...automationForm, actions: automationForm.actions.filter((item) => item.id !== id) })}
               />
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Automation name" value={automationForm.name} onChange={(value) => setAutomationForm({ ...automationForm, name: value })} />
@@ -1115,11 +1127,13 @@ function AdminApp() {
                           <span className={`rounded-full px-2 py-1 text-[11px] font-black ${rule.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{rule.isActive ? "Active" : "Inactive"}</span>
                         </div>
                         {rule.description && <p className="mt-1 text-sm text-[#64748b]">{rule.description}</p>}
-                        <AutomationDiagram
+                        <AutomationCanvas
                           title={rule.name}
-                          triggerLabels={(rule.triggers?.length ? rule.triggers : [rule.trigger]).map((trigger) => automationTriggerOptions.find((item) => item.value === trigger.type)?.label ?? trigger.type)}
-                          filterLabels={(rule.triggers?.length ? rule.triggers : [rule.trigger]).flatMap((trigger) => Object.entries(trigger.filters ?? {}).map(([key, value]) => `${key} = ${value}`))}
-                          actions={rule.actions.map((action) => automationActionOptions.find((item) => item.value === action.type)?.label ?? action.type)}
+                          triggers={(rule.triggers?.length ? rule.triggers : [rule.trigger]).map((trigger, index) => {
+                            const filterEntries = Object.entries(trigger.filters ?? {});
+                            return { id: `trigger-${index}`, type: trigger.type, filterKey: filterEntries[0]?.[0] ?? "", filterValue: filterEntries[0]?.[1] ?? "" };
+                          })}
+                          actions={rule.actions.map((action) => ({ id: action.id, type: action.type, configText: serializeActionConfig(action.config) }))}
                           isActive={rule.isActive}
                           compact
                         />
@@ -1577,36 +1591,84 @@ function Panel({ title, icon, children }: { title: string; icon: React.ReactNode
   );
 }
 
-function AutomationDiagram({ title, triggerLabels, filterLabels = [], actions, isActive, compact = false }: { title: string; triggerLabels: string[]; filterLabels?: string[]; actions: string[]; isActive: boolean; compact?: boolean }) {
-  const visibleActions = actions.length ? actions : ["No action selected"];
+function AutomationCanvas({
+  title,
+  triggers,
+  actions,
+  isActive,
+  compact = false,
+  onAddTrigger,
+  onUpdateTrigger,
+  onRemoveTrigger,
+  onAddActionAfter,
+  onUpdateAction,
+  onRemoveAction
+}: {
+  title: string;
+  triggers: Array<{ id: string; type: string; filterKey?: string; filterValue?: string }>;
+  actions: Array<{ id: string; type: string; configText?: string }>;
+  isActive: boolean;
+  compact?: boolean;
+  onAddTrigger?: () => void;
+  onUpdateTrigger?: (id: string, patch: { type?: string; filterKey?: string; filterValue?: string }) => void;
+  onRemoveTrigger?: (id: string) => void;
+  onAddActionAfter?: (index: number) => void;
+  onUpdateAction?: (id: string, patch: { type?: string; configText?: string }) => void;
+  onRemoveAction?: (id: string) => void;
+}) {
+  const editable = Boolean(onUpdateAction);
+  const visibleActions = actions.length ? actions : [{ id: "empty-action", type: "", configText: "" }];
   return (
     <div className={`${compact ? "mt-3 p-3" : "mb-5 p-4"} rounded-md border border-[#dde3ec] bg-[linear-gradient(135deg,#f8fbff,#fffdf4_52%,#f7fbf8)]`}>
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="text-sm font-black text-[#16202a]">{compact ? "Workflow canvas" : title}</div>
         <span className={`rounded-full px-2 py-1 text-[11px] font-black ${isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{isActive ? "Active" : "Inactive"}</span>
       </div>
-      <div className="mx-auto flex max-w-xl flex-col items-center">
+      <div className="mx-auto flex max-w-2xl flex-col items-center">
         <div className="grid w-full gap-2 sm:grid-cols-2">
-          {triggerLabels.map((trigger, index) => <DiagramNode key={`${trigger}-${index}`} label={`Trigger ${index + 1}`} value={trigger} tone="blue" />)}
+          {triggers.map((trigger, index) => (
+            <DiagramNode
+              key={trigger.id}
+              label={`Trigger ${index + 1}`}
+              type={trigger.type}
+              filterKey={trigger.filterKey}
+              filterValue={trigger.filterValue}
+              tone="blue"
+              kind="trigger"
+              compact={compact}
+              canRemove={triggers.length > 1}
+              onChange={(patch) => onUpdateTrigger?.(trigger.id, patch)}
+              onRemove={() => onRemoveTrigger?.(trigger.id)}
+            />
+          ))}
         </div>
-        {filterLabels.length > 0 && <>
-          <DiagramArrow vertical />
-          <div className="grid w-full gap-2 sm:grid-cols-2">
-            {filterLabels.map((filter, index) => <DiagramNode key={`${filter}-${index}`} label={`Filter ${index + 1}`} value={filter} tone="yellow" />)}
-          </div>
-        </>}
-        {visibleActions.map((action, index) => (
-          <React.Fragment key={`${action}-${index}`}>
+        {editable && <button className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#bfdbfe] bg-white px-3 py-2 text-xs font-black text-[#174ea6]" onClick={onAddTrigger}><Plus size={14} /> Add start trigger</button>}
+        {visibleActions.map((action, index) => {
+          const actionLabel = automationActionOptions.find((item) => item.value === action.type)?.label ?? (action.type || "No action selected");
+          return (
+          <React.Fragment key={action.id}>
             <DiagramArrow vertical />
-            <DiagramNode label={`Action ${index + 1}`} value={action} tone={index % 2 === 0 ? "green" : "pink"} />
-            {action.toLowerCase().includes("if / else") && (
+            <DiagramNode
+              label={`Action ${index + 1}`}
+              type={action.type}
+              configText={action.configText}
+              value={actionLabel}
+              tone={action.type === "IfElse" ? "yellow" : index % 2 === 0 ? "green" : "pink"}
+              kind="action"
+              compact={compact}
+              canRemove={actions.length > 1}
+              onChange={(patch) => onUpdateAction?.(action.id, patch)}
+              onRemove={() => onRemoveAction?.(action.id)}
+            />
+            {action.type === "IfElse" && (
               <div className="grid w-full gap-3 sm:grid-cols-2">
                 <div className="rounded-md border border-[#bbf7d0] bg-white p-3 text-center text-xs font-black text-[#137333]">YES branch continues</div>
                 <div className="rounded-md border border-[#fbcfe8] bg-white p-3 text-center text-xs font-black text-[#9d174d]">NO branch continues</div>
               </div>
             )}
+            {editable && <button className="mt-2 inline-flex items-center gap-2 rounded-full border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-black text-[#334155]" onClick={() => onAddActionAfter?.(index)}><Plus size={14} /> Add next step</button>}
           </React.Fragment>
-        ))}
+        );})}
       </div>
     </div>
   );
@@ -1617,17 +1679,64 @@ function DiagramArrow({ vertical = false }: { vertical?: boolean }) {
   return <div className="flex items-center text-[#94a3b8]"><span className="h-px w-8 bg-[#cbd5e1]" /><span className="-ml-1 text-lg">›</span></div>;
 }
 
-function DiagramNode({ label, value, tone }: { label: string; value: string; tone: "blue" | "yellow" | "green" | "pink" }) {
+function DiagramNode({
+  label,
+  type,
+  value,
+  filterKey = "",
+  filterValue = "",
+  configText = "",
+  tone,
+  kind,
+  compact = false,
+  canRemove = false,
+  onChange,
+  onRemove
+}: {
+  label: string;
+  type: string;
+  value?: string;
+  filterKey?: string;
+  filterValue?: string;
+  configText?: string;
+  tone: "blue" | "yellow" | "green" | "pink";
+  kind: "trigger" | "action";
+  compact?: boolean;
+  canRemove?: boolean;
+  onChange?: (patch: { type?: string; filterKey?: string; filterValue?: string; configText?: string }) => void;
+  onRemove?: () => void;
+}) {
   const tones = {
     blue: "border-[#bfdbfe] bg-[#eef5ff] text-[#174ea6]",
     yellow: "border-[#fde68a] bg-[#fff8df] text-[#8a6100]",
     green: "border-[#bbf7d0] bg-[#edf8f1] text-[#137333]",
     pink: "border-[#fbcfe8] bg-[#fff1f8] text-[#9d174d]"
   };
+  const editable = Boolean(onChange);
+  const labelText = kind === "trigger" ? automationTriggerOptions.find((item) => item.value === type)?.label ?? type : value ?? automationActionOptions.find((item) => item.value === type)?.label ?? type;
   return (
     <div className={`min-h-20 w-full rounded-md border p-3 text-center shadow-sm ${tones[tone]}`}>
-      <div className="text-[10px] font-black uppercase tracking-wide opacity-75">{label}</div>
-      <div className="mt-1 text-sm font-black leading-snug">{value}</div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-[10px] font-black uppercase tracking-wide opacity-75">{label}</div>
+        {editable && canRemove && <button className="rounded border border-current/20 px-1.5 py-0.5 text-[10px] font-black" onClick={onRemove}>Remove</button>}
+      </div>
+      {editable ? (
+        <div className="space-y-2 text-left">
+          <select className="w-full rounded-md border border-current/20 bg-white/90 p-2 text-xs font-bold text-[#16202a]" value={type} onChange={(event) => onChange?.({ type: event.target.value })}>
+            {(kind === "trigger" ? automationTriggerOptions : automationActionOptions).map((option) => <option key={option.value} value={option.value}>{kind === "trigger" && "module" in option ? `${option.module} - ` : ""}{option.label}</option>)}
+          </select>
+          {kind === "trigger" && !compact && <div className="grid gap-2 sm:grid-cols-2">
+            <input className="rounded-md border border-current/20 bg-white/90 p-2 text-xs text-[#16202a]" placeholder="Filter field" value={filterKey} onChange={(event) => onChange?.({ filterKey: event.target.value })} />
+            <input className="rounded-md border border-current/20 bg-white/90 p-2 text-xs text-[#16202a]" placeholder="Filter value" value={filterValue} onChange={(event) => onChange?.({ filterValue: event.target.value })} />
+          </div>}
+          {kind === "action" && !compact && <textarea className="min-h-20 w-full rounded-md border border-current/20 bg-white/90 p-2 font-mono text-xs text-[#16202a]" placeholder={"key=value\nanotherKey=value"} value={configText} onChange={(event) => onChange?.({ configText: event.target.value })} />}
+        </div>
+      ) : (
+        <>
+          <div className="mt-1 text-sm font-black leading-snug">{labelText}</div>
+          {filterKey && <div className="mt-2 rounded bg-white/70 px-2 py-1 text-xs font-bold">{filterKey} = {filterValue || "any"}</div>}
+        </>
+      )}
     </div>
   );
 }
