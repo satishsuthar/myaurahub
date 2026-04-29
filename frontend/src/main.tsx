@@ -87,6 +87,9 @@ function AdminApp() {
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>("");
   const [pipelineForm, setPipelineForm] = useState(emptyPipeline);
   const [opportunityForm, setOpportunityForm] = useState(emptyOpportunity);
+  const [pipelineModalOpen, setPipelineModalOpen] = useState(false);
+  const [editingPipelineId, setEditingPipelineId] = useState<string | null>(null);
+  const [opportunityModalStageId, setOpportunityModalStageId] = useState<string | null>(null);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [contactForm, setContactForm] = useState<Omit<Contact, "id">>(emptyContact);
   const [contactTasks, setContactTasks] = useState<ContactTask[]>([]);
@@ -329,6 +332,7 @@ function AdminApp() {
   }
 
   async function savePipeline() {
+    const isEditing = Boolean(editingPipelineId);
     const stages = pipelineForm.stagesText.split("\n").map((name) => name.trim()).filter(Boolean).map((name, index) => ({ id: `stage-${index + 1}-${slugifyLocal(name)}`, name, order: index + 1 }));
     if (!pipelineForm.name.trim() || stages.length === 0) {
       setMessageTone("error");
@@ -336,18 +340,46 @@ function AdminApp() {
       return;
     }
     try {
-      const saved = await api<Pipeline>("/api/opportunities/pipelines", {
-        method: "POST",
+      const saved = await api<Pipeline>(editingPipelineId ? `/api/opportunities/pipelines/${editingPipelineId}` : "/api/opportunities/pipelines", {
+        method: editingPipelineId ? "PUT" : "POST",
         body: JSON.stringify({ name: pipelineForm.name, description: pipelineForm.description, stages })
       });
-      setPipelines([...pipelines, saved]);
+      setPipelines(editingPipelineId ? pipelines.map((pipeline) => pipeline.id === saved.id ? saved : pipeline) : [...pipelines, saved]);
       setSelectedPipelineId(saved.id);
       setPipelineForm(emptyPipeline);
+      setEditingPipelineId(null);
+      setPipelineModalOpen(false);
       setMessageTone("success");
-      setMessage("Pipeline created.");
+      setMessage(isEditing ? "Pipeline updated." : "Pipeline created.");
     } catch (error) {
       setMessageTone("error");
       setMessage(error instanceof Error ? error.message : "Could not save pipeline.");
+    }
+  }
+
+  function openPipelineModal(pipeline?: Pipeline) {
+    if (pipeline) {
+      setEditingPipelineId(pipeline.id);
+      setPipelineForm({ name: pipeline.name, description: pipeline.description ?? "", stagesText: pipeline.stages.sort((a, b) => a.order - b.order).map((stage) => stage.name).join("\n") });
+    } else {
+      setEditingPipelineId(null);
+      setPipelineForm(emptyPipeline);
+    }
+    setPipelineModalOpen(true);
+  }
+
+  async function deletePipeline(pipeline: Pipeline) {
+    if (!window.confirm(`Delete "${pipeline.name}"? This is only allowed when it has no opportunities.`)) return;
+    try {
+      await api(`/api/opportunities/pipelines/${pipeline.id}`, { method: "DELETE" });
+      const remaining = pipelines.filter((item) => item.id !== pipeline.id);
+      setPipelines(remaining);
+      setSelectedPipelineId(remaining[0]?.id ?? "");
+      setMessageTone("success");
+      setMessage("Pipeline deleted.");
+    } catch (error) {
+      setMessageTone("error");
+      setMessage(error instanceof Error ? error.message : "Could not delete pipeline.");
     }
   }
 
@@ -367,6 +399,7 @@ function AdminApp() {
       });
       setOpportunities([saved, ...opportunities]);
       setOpportunityForm(emptyOpportunity);
+      setOpportunityModalStageId(null);
       setMessageTone("success");
       setMessage("Opportunity created.");
     } catch (error) {
@@ -714,55 +747,57 @@ function AdminApp() {
           </section>}
 
           {activeTab === "opportunities" && <section className="space-y-5">
-            <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
-              <Panel title="Pipelines" icon={<Clock size={18} />}>
-                <div className="space-y-2">
-                  {pipelines.map((pipeline) => (
-                    <button key={pipeline.id} className={`w-full rounded-md border p-3 text-left text-sm ${selectedPipelineId === pipeline.id ? "border-[var(--theme-primary)] bg-[#f5f9ff]" : "border-[#dde3ec] bg-white hover:bg-[#fbfcff]"}`} onClick={() => setSelectedPipelineId(pipeline.id)}>
-                      <div className="font-bold">{pipeline.name}</div>
-                      <div className="text-xs text-[#64748b]">{pipeline.stages.length} stages</div>
+            {(() => {
+              const pipeline = pipelines.find((item) => item.id === selectedPipelineId) ?? pipelines[0];
+              return (
+                <div className="flex flex-col gap-3 rounded-md border border-[#dde3ec] bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <div className="display-font text-2xl font-black text-[var(--theme-text)]">Opportunities</div>
+                    <p className="text-sm text-[#64748b]">Work the pipeline from the board. Add deals directly inside the stage they belong to.</p>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <select className="min-w-56 rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold text-[#16202a]" value={pipeline?.id ?? ""} onChange={(event) => setSelectedPipelineId(event.target.value)}>
+                      {pipelines.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </select>
+                    {pipeline && <button className="inline-flex items-center justify-center gap-2 rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold text-[#16202a] hover:bg-[#f8fafc]" onClick={() => openPipelineModal(pipeline)}>
+                      <Settings size={16} /> Manage pipeline
+                    </button>}
+                    <button className="inline-flex items-center justify-center gap-2 rounded-md bg-[var(--theme-primary)] px-3 py-2 text-sm font-bold text-white" onClick={() => openPipelineModal()}>
+                      <Plus size={16} /> New pipeline
                     </button>
-                  ))}
+                  </div>
                 </div>
-                <div className="mt-4 rounded-md border border-dashed border-[#cbd5e1] bg-white p-3">
-                  <Field label="Pipeline name" value={pipelineForm.name} onChange={(value) => setPipelineForm({ ...pipelineForm, name: value })} />
-                  <textarea className="mt-3 min-h-16 w-full rounded-md border border-[#cbd5e1] p-2 text-sm" placeholder="Description" value={pipelineForm.description} onChange={(event) => setPipelineForm({ ...pipelineForm, description: event.target.value })} />
-                  <textarea className="mt-3 min-h-28 w-full rounded-md border border-[#cbd5e1] p-2 text-sm" placeholder="One stage per line" value={pipelineForm.stagesText} onChange={(event) => setPipelineForm({ ...pipelineForm, stagesText: event.target.value })} />
-                  <button className="mt-3 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={savePipeline}>Create pipeline</button>
-                </div>
-              </Panel>
-
-              <Panel title="New Opportunity" icon={<Plus size={18} />}>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Field label="Title" value={opportunityForm.title} onChange={(value) => setOpportunityForm({ ...opportunityForm, title: value })} />
-                  <Field label="Value" type="number" value={String(opportunityForm.value)} onChange={(value) => setOpportunityForm({ ...opportunityForm, value: Number(value) })} />
-                  <SelectField label="Contact" value={opportunityForm.contactId} options={["", ...contacts.map((contact) => contact.id)]} onChange={(value) => setOpportunityForm({ ...opportunityForm, contactId: value })} />
-                  <Field label="Currency" value={opportunityForm.currency} onChange={(value) => setOpportunityForm({ ...opportunityForm, currency: value.toUpperCase().slice(0, 3) })} />
-                  <Field label="Expected close date" type="date" value={opportunityForm.expectedCloseDate} onChange={(value) => setOpportunityForm({ ...opportunityForm, expectedCloseDate: value })} />
-                  <Field label="Source" value={opportunityForm.source} onChange={(value) => setOpportunityForm({ ...opportunityForm, source: value })} />
-                </div>
-                <textarea className="mt-4 min-h-20 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" placeholder="Notes" value={opportunityForm.notes} onChange={(event) => setOpportunityForm({ ...opportunityForm, notes: event.target.value })} />
-                <button className="mt-4 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={() => saveOpportunity()}>Create opportunity</button>
-              </Panel>
-            </div>
+              );
+            })()}
 
             {(() => {
               const pipeline = pipelines.find((item) => item.id === selectedPipelineId) ?? pipelines[0];
               if (!pipeline) return <Panel title="Pipeline Board" icon={<Clock size={18} />}><p className="text-sm text-stone-600">Create a pipeline to start tracking opportunities.</p></Panel>;
               const pipelineOpportunities = opportunities.filter((item) => item.pipelineId === pipeline.id);
               return (
-                <Panel title={`${pipeline.name} Board`} icon={<Clock size={18} />}>
-                  <div className="grid gap-3 xl:grid-cols-4">
+                <div className="overflow-x-auto pb-2">
+                  <div className="grid min-w-[940px] gap-3" style={{ gridTemplateColumns: `repeat(${Math.max(pipeline.stages.length, 1)}, minmax(230px, 1fr))` }}>
                     {pipeline.stages.map((stage) => {
                       const stageItems = pipelineOpportunities.filter((item) => item.stageId === stage.id);
                       const stageValue = stageItems.reduce((sum, item) => sum + Number(item.value || 0), 0);
+                      const stageAccent = ["#2563eb", "#fbbc05", "#34a853", "#ec4899", "#7c3aed", "#f97316"][pipeline.stages.indexOf(stage) % 6];
                       return (
-                        <div key={stage.id} className="rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
-                          <div className="mb-3 flex items-center justify-between gap-2">
-                            <div className="font-bold">{stage.name}</div>
+                        <div key={stage.id} className="flex min-h-[560px] flex-col rounded-md border border-[#dde3ec] bg-[#f8fafc]">
+                          <div className="border-b border-[#dde3ec] bg-white p-3" style={{ borderTop: `4px solid ${stageAccent}` }}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="font-black text-[#16202a]">{stage.name}</div>
                             <div className="text-xs font-bold text-[#64748b]">{stageItems.length} · {stageValue.toLocaleString()} {stageItems[0]?.currency ?? "AUD"}</div>
+                              </div>
+                              <button className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[var(--theme-primary)] text-white shadow-sm" title={`Add to ${stage.name}`} onClick={() => {
+                                setOpportunityForm(emptyOpportunity);
+                                setOpportunityModalStageId(stage.id);
+                              }}>
+                                <Plus size={16} />
+                              </button>
+                            </div>
                           </div>
-                          <div className="space-y-2">
+                          <div className="flex-1 space-y-2 p-3">
                             {stageItems.map((opportunity) => (
                               <div key={opportunity.id} className="rounded-md border border-[#dde3ec] bg-white p-3 text-sm shadow-sm">
                                 <div className="font-bold">{opportunity.title}</div>
@@ -773,13 +808,85 @@ function AdminApp() {
                                 </select>
                               </div>
                             ))}
-                            {stageItems.length === 0 && <div className="rounded-md border border-dashed border-[#cbd5e1] p-3 text-center text-xs text-[#64748b]">No opportunities</div>}
+                            {stageItems.length === 0 && <button className="w-full rounded-md border border-dashed border-[#cbd5e1] bg-white p-4 text-center text-xs font-bold text-[#64748b] hover:border-[var(--theme-primary)] hover:text-[var(--theme-primary)]" onClick={() => {
+                              setOpportunityForm(emptyOpportunity);
+                              setOpportunityModalStageId(stage.id);
+                            }}>Add first opportunity</button>}
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                </Panel>
+                </div>
+              );
+            })()}
+
+            {pipelineModalOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f172a]/35 p-4">
+              <div className="w-full max-w-xl rounded-md bg-white p-5 shadow-2xl">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="display-font text-xl font-black text-[#16202a]">{editingPipelineId ? "Manage Pipeline" : "New Pipeline"}</div>
+                    <p className="text-sm text-[#64748b]">Stages are listed one per line in board order.</p>
+                  </div>
+                  <button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => setPipelineModalOpen(false)}>Close</button>
+                </div>
+                <div className="space-y-3">
+                  <Field label="Pipeline name" value={pipelineForm.name} onChange={(value) => setPipelineForm({ ...pipelineForm, name: value })} />
+                  <textarea className="min-h-16 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" placeholder="Description" value={pipelineForm.description} onChange={(event) => setPipelineForm({ ...pipelineForm, description: event.target.value })} />
+                  <textarea className="min-h-36 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" placeholder={"New Lead\nQualified\nProposal\nWon"} value={pipelineForm.stagesText} onChange={(event) => setPipelineForm({ ...pipelineForm, stagesText: event.target.value })} />
+                </div>
+                <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  {editingPipelineId && <button className="inline-flex items-center justify-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm font-bold text-red-700" onClick={() => {
+                    const pipeline = pipelines.find((item) => item.id === editingPipelineId);
+                    if (pipeline) deletePipeline(pipeline);
+                  }}>
+                    <Trash2 size={16} /> Delete
+                  </button>}
+                  <div className="flex gap-2 sm:ml-auto">
+                    <button className="rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" onClick={() => setPipelineModalOpen(false)}>Cancel</button>
+                    <button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={savePipeline}>
+                      <Save size={16} /> Save pipeline
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>}
+
+            {opportunityModalStageId && (() => {
+              const pipeline = pipelines.find((item) => item.id === selectedPipelineId) ?? pipelines[0];
+              if (!pipeline) return null;
+              return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f172a]/35 p-4">
+                  <div className="w-full max-w-2xl rounded-md bg-white p-5 shadow-2xl">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="display-font text-xl font-black text-[#16202a]">New Opportunity</div>
+                        <p className="text-sm text-[#64748b]">Pipeline: {pipeline.name} - Stage: {pipeline.stages.find((stage) => stage.id === opportunityModalStageId)?.name}</p>
+                      </div>
+                      <button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => setOpportunityModalStageId(null)}>Close</button>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <Field label="Title" value={opportunityForm.title} onChange={(value) => setOpportunityForm({ ...opportunityForm, title: value })} />
+                      <Field label="Value" type="number" value={String(opportunityForm.value)} onChange={(value) => setOpportunityForm({ ...opportunityForm, value: Number(value) })} />
+                      <label className="text-sm font-bold text-[#334155]">Contact
+                        <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={opportunityForm.contactId} onChange={(event) => setOpportunityForm({ ...opportunityForm, contactId: event.target.value })}>
+                          <option value="">No contact</option>
+                          {contacts.map((contact) => <option key={contact.id} value={contact.id}>{`${contact.firstName} ${contact.lastName}`.trim() || contact.email || contact.id}</option>)}
+                        </select>
+                      </label>
+                      <Field label="Currency" value={opportunityForm.currency} onChange={(value) => setOpportunityForm({ ...opportunityForm, currency: value.toUpperCase().slice(0, 3) })} />
+                      <Field label="Expected close date" type="date" value={opportunityForm.expectedCloseDate} onChange={(value) => setOpportunityForm({ ...opportunityForm, expectedCloseDate: value })} />
+                      <Field label="Source" value={opportunityForm.source} onChange={(value) => setOpportunityForm({ ...opportunityForm, source: value })} />
+                    </div>
+                    <textarea className="mt-4 min-h-20 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" placeholder="Notes" value={opportunityForm.notes} onChange={(event) => setOpportunityForm({ ...opportunityForm, notes: event.target.value })} />
+                    <div className="mt-5 flex justify-end gap-2">
+                      <button className="rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" onClick={() => setOpportunityModalStageId(null)}>Cancel</button>
+                      <button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={() => saveOpportunity(opportunityModalStageId)}>
+                        <Plus size={16} /> Add opportunity
+                      </button>
+                    </div>
+                  </div>
+                </div>
               );
             })()}
           </section>}

@@ -110,6 +110,9 @@ def handler(event, _context):
         if path.startswith("/api/opportunities/pipelines/") and method == "PUT":
             pipeline_id = path.split("/")[4]
             return response(200, update_pipeline(context, pipeline_id, body))
+        if path.startswith("/api/opportunities/pipelines/") and method == "DELETE":
+            pipeline_id = path.split("/")[4]
+            return response(200, delete_pipeline(context, pipeline_id))
         if path == "/api/opportunities" and method == "GET":
             return response(200, list_opportunities(context["workspaceSlug"]))
         if path == "/api/opportunities" and method == "POST":
@@ -651,7 +654,8 @@ def find_pipeline(workspace_slug, pipeline_id):
     if item:
         return item
     if pipeline_id == "default":
-        return list_pipelines(workspace_slug)[0]
+        list_pipelines(workspace_slug)
+        return table.get_item(Key={"pk": workspace_pk(workspace_slug), "sk": "PIPELINE#default"}).get("Item")
     return None
 
 
@@ -662,6 +666,17 @@ def update_pipeline(context, pipeline_id, data):
     updated = {**current, "name": str(data.get("name", current.get("name", ""))).strip()[:120], "description": str(data.get("description", current.get("description", ""))).strip()[:1000], "stages": clean_stages(data.get("stages", current.get("stages", []))), "updatedAtUtc": datetime.utcnow().isoformat() + "Z"}
     table.put_item(Item=updated)
     return pipeline_shape(updated)
+
+
+def delete_pipeline(context, pipeline_id):
+    current = find_pipeline(context["workspaceSlug"], pipeline_id)
+    if not current:
+        raise ValueError("Pipeline not found.")
+    for opportunity in list_opportunities(context["workspaceSlug"]):
+        if opportunity.get("pipelineId") == pipeline_id:
+            raise ConflictError("This pipeline has opportunities, so it cannot be deleted.")
+    table.delete_item(Key={"pk": workspace_pk(context["workspaceSlug"]), "sk": f"PIPELINE#{pipeline_id}"})
+    return {"deleted": True, "id": pipeline_id}
 
 
 def opportunity_shape(item):
