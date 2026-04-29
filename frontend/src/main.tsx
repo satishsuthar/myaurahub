@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Calendar, Check, Clock, Copy, ExternalLink, Lock, LogOut, MapPin, Plus, Save, Settings, Trash2, Users } from "lucide-react";
 import "./index.css";
-import { api, apiBase, AppointmentType, AvailabilityRule, AuthResponse, AuthUser, Booking, Slot, ThemeConfig, UnavailabilityDate, clearAuth, getAuthUser, saveAuth, userId } from "./api";
+import { api, apiBase, AppointmentType, AvailabilityRule, AuthResponse, AuthUser, Booking, Contact, ContactActivity, ContactTask, Slot, ThemeConfig, UnavailabilityDate, clearAuth, getAuthUser, saveAuth, userId } from "./api";
 
 const defaultAppointment: Omit<AppointmentType, "id" | "isActive"> = {
   assignedUserId: userId,
@@ -43,6 +43,28 @@ const themePresets: ThemeConfig[] = [
 const defaultTheme = themePresets[0];
 const fontOptions = ["Inter", "Plus Jakarta Sans", "Poppins", "DM Sans", "Manrope", "Montserrat", "Lora", "Playfair Display", "Nunito Sans", "Outfit"];
 
+const emptyContact: Omit<Contact, "id"> = {
+  firstName: "",
+  lastName: "",
+  email: "",
+  phone: "",
+  company: "",
+  jobTitle: "",
+  addressLine1: "",
+  addressLine2: "",
+  city: "",
+  state: "",
+  postalCode: "",
+  country: "",
+  timezone: "Australia/Sydney",
+  source: "Manual",
+  notes: "",
+  tags: [],
+  customFields: {}
+};
+
+const emptyTask = { title: "", description: "", dueDate: "" };
+
 function Router() {
   return window.location.pathname.startsWith("/book/") ? <PublicBookingPage /> : <AdminApp />;
 }
@@ -51,11 +73,18 @@ function AdminApp() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(() => getAuthUser());
   const [appointments, setAppointments] = useState<AppointmentType[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const [contactForm, setContactForm] = useState<Omit<Contact, "id">>(emptyContact);
+  const [contactTasks, setContactTasks] = useState<ContactTask[]>([]);
+  const [contactActivity, setContactActivity] = useState<ContactActivity[]>([]);
+  const [taskForm, setTaskForm] = useState(emptyTask);
+  const [customFieldDraft, setCustomFieldDraft] = useState({ name: "", value: "" });
   const [rules, setRules] = useState<AvailabilityRule[]>([]);
   const [unavailability, setUnavailability] = useState<UnavailabilityDate[]>([]);
   const [form, setForm] = useState(defaultAppointment);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"calendars" | "availability" | "bookings" | "settings">("calendars");
+  const [activeTab, setActiveTab] = useState<"calendars" | "availability" | "bookings" | "contacts" | "settings">("calendars");
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"success" | "error">("success");
   const [savingAppointment, setSavingAppointment] = useState(false);
@@ -71,15 +100,17 @@ function AdminApp() {
   }
 
   async function load() {
-    const [appointmentData, bookingData, availabilityData, unavailableData, themeData] = await Promise.all([
+    const [appointmentData, bookingData, contactData, availabilityData, unavailableData, themeData] = await Promise.all([
       api<AppointmentType[]>("/api/calendar/appointment-types"),
       api<Booking[]>("/api/calendar/bookings"),
+      api<Contact[]>("/api/contacts"),
       api<AvailabilityRule[]>("/api/calendar/availability/me"),
       api<UnavailabilityDate[]>("/api/calendar/unavailability"),
       api<ThemeConfig>("/api/workspace/theme")
     ]);
     setAppointments(appointmentData);
     setBookings(bookingData);
+    setContacts(contactData);
     setRules(availabilityData.map((rule) => ({ ...rule, startTime: rule.startTime.slice(0, 5), endTime: rule.endTime.slice(0, 5) })));
     setUnavailability(unavailableData);
     setTheme(themeData);
@@ -209,6 +240,75 @@ function AdminApp() {
     }
   }
 
+  async function openContact(contact: Contact) {
+    setSelectedContactId(contact.id);
+    setContactForm({ ...emptyContact, ...contact, customFields: contact.customFields ?? {}, tags: contact.tags ?? [] });
+    const [tasks, activity] = await Promise.all([
+      api<ContactTask[]>(`/api/contacts/${contact.id}/tasks`),
+      api<ContactActivity[]>(`/api/contacts/${contact.id}/activity`)
+    ]);
+    setContactTasks(tasks);
+    setContactActivity(activity);
+    setActiveTab("contacts");
+  }
+
+  function newContact() {
+    setSelectedContactId(null);
+    setContactForm(emptyContact);
+    setContactTasks([]);
+    setContactActivity([]);
+    setTaskForm(emptyTask);
+    setCustomFieldDraft({ name: "", value: "" });
+    setActiveTab("contacts");
+  }
+
+  async function saveContact() {
+    setMessage("");
+    try {
+      const saved = await api<Contact>(selectedContactId ? `/api/contacts/${selectedContactId}` : "/api/contacts", {
+        method: selectedContactId ? "PUT" : "POST",
+        body: JSON.stringify(contactForm)
+      });
+      setMessageTone("success");
+      setMessage(selectedContactId ? "Contact updated." : "Contact created.");
+      await load();
+      await openContact(saved);
+    } catch (error) {
+      setMessageTone("error");
+      setMessage(error instanceof Error ? error.message : "Could not save contact.");
+    }
+  }
+
+  async function addContactTask() {
+    if (!selectedContactId || !taskForm.title.trim()) return;
+    try {
+      const task = await api<ContactTask>(`/api/contacts/${selectedContactId}/tasks`, {
+        method: "POST",
+        body: JSON.stringify(taskForm)
+      });
+      setContactTasks([task, ...contactTasks]);
+      setTaskForm(emptyTask);
+    } catch (error) {
+      setMessageTone("error");
+      setMessage(error instanceof Error ? error.message : "Could not add task.");
+    }
+  }
+
+  async function toggleTask(task: ContactTask) {
+    const updated = await api<ContactTask>(`/api/contacts/${task.contactId}/tasks/${task.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ ...task, status: task.status === "Done" ? "Open" : "Done" })
+    });
+    setContactTasks(contactTasks.map((item) => item.id === task.id ? updated : item));
+  }
+
+  function addCustomField() {
+    const key = customFieldDraft.name.trim();
+    if (!key) return;
+    setContactForm({ ...contactForm, customFields: { ...(contactForm.customFields ?? {}), [key]: customFieldDraft.value } });
+    setCustomFieldDraft({ name: "", value: "" });
+  }
+
   function editAppointment(item: AppointmentType) {
     setEditingId(item.id);
     setForm({
@@ -257,6 +357,7 @@ function AdminApp() {
           <NavItem icon={<Calendar size={17} />} label="Calendars" active={activeTab === "calendars"} onClick={() => setActiveTab("calendars")} />
           <NavItem icon={<Clock size={17} />} label="Availability" active={activeTab === "availability"} onClick={() => setActiveTab("availability")} />
           <NavItem icon={<Users size={17} />} label="Bookings" active={activeTab === "bookings"} onClick={() => setActiveTab("bookings")} />
+          <NavItem icon={<Users size={17} />} label="Contacts" active={activeTab === "contacts"} onClick={() => setActiveTab("contacts")} />
           <NavItem icon={<Settings size={17} />} label="Settings" active={activeTab === "settings"} onClick={() => setActiveTab("settings")} />
           <NavItem icon={<LogOut size={17} />} label="Logout" onClick={() => { clearAuth(); setAuthUser(null); }} />
         </nav>
@@ -406,6 +507,103 @@ function AdminApp() {
             </Panel>
           </section>}
 
+          {activeTab === "contacts" && <section className="grid gap-5 xl:grid-cols-[360px_1fr]">
+            <Panel title="Contacts" icon={<Users size={18} />}>
+              <button className="mb-4 inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={newContact}>
+                <Plus size={16} /> New contact
+              </button>
+              <div className="space-y-2">
+                {contacts.length === 0 && <p className="text-sm text-stone-600">No contacts yet.</p>}
+                {contacts.map((contact) => (
+                  <button key={contact.id} className={`w-full rounded-md border p-3 text-left text-sm ${selectedContactId === contact.id ? "border-[var(--theme-primary)] bg-[#f5f9ff]" : "border-[#dde3ec] bg-white hover:bg-[#fbfcff]"}`} onClick={() => openContact(contact)}>
+                    <div className="font-bold">{contact.firstName} {contact.lastName}</div>
+                    <div className="text-xs text-[#64748b]">{contact.email}</div>
+                    <div className="mt-1 text-xs text-[#64748b]">{contact.company || contact.phone || contact.source}</div>
+                  </button>
+                ))}
+              </div>
+            </Panel>
+
+            <div className="space-y-5">
+              <Panel title={selectedContactId ? "Contact Profile" : "Create Contact"} icon={<Users size={18} />}>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Field label="First name" value={contactForm.firstName} onChange={(value) => setContactForm({ ...contactForm, firstName: value })} />
+                  <Field label="Last name" value={contactForm.lastName} onChange={(value) => setContactForm({ ...contactForm, lastName: value })} />
+                  <Field label="Email" type="email" value={contactForm.email} onChange={(value) => setContactForm({ ...contactForm, email: value })} />
+                  <Field label="Phone" type="tel" value={contactForm.phone ?? ""} onChange={(value) => setContactForm({ ...contactForm, phone: value })} />
+                  <Field label="Company" value={contactForm.company ?? ""} onChange={(value) => setContactForm({ ...contactForm, company: value })} />
+                  <Field label="Job title" value={contactForm.jobTitle ?? ""} onChange={(value) => setContactForm({ ...contactForm, jobTitle: value })} />
+                  <Field label="Address line 1" value={contactForm.addressLine1 ?? ""} onChange={(value) => setContactForm({ ...contactForm, addressLine1: value })} />
+                  <Field label="Address line 2" value={contactForm.addressLine2 ?? ""} onChange={(value) => setContactForm({ ...contactForm, addressLine2: value })} />
+                  <Field label="City" value={contactForm.city ?? ""} onChange={(value) => setContactForm({ ...contactForm, city: value })} />
+                  <Field label="State" value={contactForm.state ?? ""} onChange={(value) => setContactForm({ ...contactForm, state: value })} />
+                  <Field label="Postal code" value={contactForm.postalCode ?? ""} onChange={(value) => setContactForm({ ...contactForm, postalCode: value })} />
+                  <Field label="Country" value={contactForm.country ?? ""} onChange={(value) => setContactForm({ ...contactForm, country: value })} />
+                  <Field label="Tags" value={(contactForm.tags ?? []).join(", ")} onChange={(value) => setContactForm({ ...contactForm, tags: value.split(",").map((tag) => tag.trim()).filter(Boolean) })} />
+                  <Field label="Source" value={contactForm.source ?? ""} onChange={(value) => setContactForm({ ...contactForm, source: value })} />
+                </div>
+                <textarea className="mt-4 min-h-24 w-full rounded-md border border-[#cbd5e1] bg-white p-3 text-sm" placeholder="Notes" value={contactForm.notes ?? ""} onChange={(event) => setContactForm({ ...contactForm, notes: event.target.value })} />
+                <div className="mt-5 rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
+                  <div className="mb-3 text-sm font-bold">Custom fields</div>
+                  <div className="space-y-2">
+                    {Object.entries(contactForm.customFields ?? {}).map(([key, value]) => (
+                      <div key={key} className="grid grid-cols-[1fr_1fr_38px] gap-2">
+                        <input className="rounded-md border border-[#cbd5e1] p-2 text-sm" value={key} readOnly />
+                        <input className="rounded-md border border-[#cbd5e1] p-2 text-sm" value={value} onChange={(event) => setContactForm({ ...contactForm, customFields: { ...(contactForm.customFields ?? {}), [key]: event.target.value } })} />
+                        <button className="rounded-md border border-rose-200 text-rose-700" onClick={() => {
+                          const next = { ...(contactForm.customFields ?? {}) };
+                          delete next[key];
+                          setContactForm({ ...contactForm, customFields: next });
+                        }}><Trash2 size={15} className="mx-auto" /></button>
+                      </div>
+                    ))}
+                    <div className="grid grid-cols-[1fr_1fr_90px] gap-2">
+                      <input className="rounded-md border border-[#cbd5e1] p-2 text-sm" placeholder="Field name" value={customFieldDraft.name} onChange={(event) => setCustomFieldDraft({ ...customFieldDraft, name: event.target.value })} />
+                      <input className="rounded-md border border-[#cbd5e1] p-2 text-sm" placeholder="Value" value={customFieldDraft.value} onChange={(event) => setCustomFieldDraft({ ...customFieldDraft, value: event.target.value })} />
+                      <button className="rounded-md border border-[#cbd5e1] bg-white text-sm font-bold" onClick={addCustomField}>Add</button>
+                    </div>
+                  </div>
+                </div>
+                <button className="mt-5 inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveContact}>
+                  <Save size={16} /> Save contact
+                </button>
+              </Panel>
+
+              {selectedContactId && <section className="grid gap-5 xl:grid-cols-2">
+                <Panel title="Tasks" icon={<Clock size={18} />}>
+                  <div className="grid gap-2 md:grid-cols-[1fr_150px]">
+                    <Field label="Task" value={taskForm.title} onChange={(value) => setTaskForm({ ...taskForm, title: value })} />
+                    <Field label="Due date" type="date" value={taskForm.dueDate} onChange={(value) => setTaskForm({ ...taskForm, dueDate: value })} />
+                  </div>
+                  <textarea className="mt-3 min-h-16 w-full rounded-md border border-[#cbd5e1] bg-white p-3 text-sm" placeholder="Task details" value={taskForm.description} onChange={(event) => setTaskForm({ ...taskForm, description: event.target.value })} />
+                  <button className="mt-3 rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" onClick={addContactTask}>Add task</button>
+                  <div className="mt-4 space-y-2">
+                    {contactTasks.length === 0 && <p className="text-sm text-stone-600">No tasks yet.</p>}
+                    {contactTasks.map((task) => (
+                      <button key={task.id} className="w-full rounded-md border border-[#dde3ec] bg-white p-3 text-left text-sm" onClick={() => toggleTask(task)}>
+                        <div className={`font-bold ${task.status === "Done" ? "line-through text-[#64748b]" : ""}`}>{task.title}</div>
+                        <div className="text-xs text-[#64748b]">{task.dueDate || "No due date"} · {task.status}</div>
+                      </button>
+                    ))}
+                  </div>
+                </Panel>
+
+                <Panel title="Activity" icon={<Calendar size={18} />}>
+                  <div className="space-y-3">
+                    {contactActivity.length === 0 && <p className="text-sm text-stone-600">No activity yet.</p>}
+                    {contactActivity.map((activity) => (
+                      <div key={activity.id} className="rounded-md border-l-4 border-[var(--theme-primary)] bg-white p-3 text-sm shadow-sm">
+                        <div className="font-bold">{activity.title}</div>
+                        <div className="text-xs text-[#64748b]">{activity.type} · {new Date(activity.occurredAtUtc).toLocaleString()}</div>
+                        {activity.description && <p className="mt-1 text-[#64748b]">{activity.description}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </Panel>
+              </section>}
+            </div>
+          </section>}
+
           {activeTab === "settings" && <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
             <Panel title="Settings" icon={<Settings size={18} />}>
               <div className="space-y-2 text-sm text-stone-600">
@@ -545,7 +743,9 @@ function PublicBookingPage() {
   const selectedDaySlots = slotsByDate.get(selectedDate) ?? [];
 
   useEffect(() => {
-    fetch(`${apiBase}/api/public/booking/${workspaceSlug}/${appointmentSlug}?t=${Date.now()}`, { cache: "no-store" })
+    const rememberedEmail = localStorage.getItem("calbook.customerEmail");
+    const emailPart = rememberedEmail ? `&email=${encodeURIComponent(rememberedEmail)}` : "";
+    fetch(`${apiBase}/api/public/booking/${workspaceSlug}/${appointmentSlug}?t=${Date.now()}${emailPart}`, { cache: "no-store" })
       .then((response) => response.json())
       .then(setMetadata)
       .catch(() => setError("This booking page is unavailable."));
@@ -579,6 +779,7 @@ function PublicBookingPage() {
     }
 
     setConfirmed(true);
+    localStorage.setItem("calbook.customerEmail", customer.email.trim());
   }
 
   if (confirmed && selectedSlot && metadata) {

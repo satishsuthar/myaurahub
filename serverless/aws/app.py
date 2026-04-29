@@ -99,6 +99,25 @@ def handler(event, _context):
             return response(200, get_unavailability(context["userId"]))
         if path == "/api/calendar/unavailability" and method == "PUT":
             return response(200, replace_unavailability(context["userId"], body))
+        if path == "/api/contacts" and method == "GET":
+            return response(200, list_contacts(context["workspaceSlug"]))
+        if path == "/api/contacts" and method == "POST":
+            return response(201, create_contact(context, body))
+        if path.startswith("/api/contacts/"):
+            parts = path.strip("/").split("/")
+            contact_id = parts[2] if len(parts) > 2 else ""
+            if len(parts) == 3 and method == "GET":
+                return response(200, get_contact_by_id(context["workspaceSlug"], contact_id))
+            if len(parts) == 3 and method == "PUT":
+                return response(200, update_contact(context, contact_id, body))
+            if len(parts) == 4 and parts[3] == "tasks" and method == "GET":
+                return response(200, list_contact_tasks(context["workspaceSlug"], contact_id))
+            if len(parts) == 4 and parts[3] == "tasks" and method == "POST":
+                return response(201, create_contact_task(context, contact_id, body))
+            if len(parts) == 5 and parts[3] == "tasks" and method == "PUT":
+                return response(200, update_contact_task(context, contact_id, parts[4], body))
+            if len(parts) == 4 and parts[3] == "activity" and method == "GET":
+                return response(200, list_contact_activity(context["workspaceSlug"], contact_id))
         if path == "/api/workspace/theme" and method == "GET":
             return response(200, get_theme(context["workspaceSlug"]))
         if path == "/api/workspace/theme" and method == "PUT":
@@ -380,6 +399,166 @@ def replace_unavailability(user_id, data):
     return get_unavailability(user_id)
 
 
+def list_contacts(workspace_slug):
+    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("CONTACT#"))
+    return [contact_shape(item) for item in result.get("Items", [])]
+
+
+def contact_shape(item):
+    return {k: item.get(k) for k in ["id", "firstName", "lastName", "email", "phone", "company", "jobTitle", "addressLine1", "addressLine2", "city", "state", "postalCode", "country", "timezone", "source", "notes", "tags", "customFields", "createdAtUtc", "updatedAtUtc"]}
+
+
+def clean_contact_data(data):
+    email = normalize_email(data.get("email", ""))
+    if not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$", email):
+        raise ValueError("Enter a valid contact email address.")
+    phone = str(data.get("phone", "")).strip()
+    if phone and not re.match(r"^\+?[0-9\s().-]{7,20}$", phone):
+        raise ValueError("Enter a valid contact phone number.")
+    custom_fields = data.get("customFields") or {}
+    if not isinstance(custom_fields, dict):
+        raise ValueError("Custom fields must be an object.")
+    return {
+        "firstName": str(data.get("firstName", "")).strip()[:80],
+        "lastName": str(data.get("lastName", "")).strip()[:80],
+        "email": email,
+        "normalizedEmail": email,
+        "phone": phone[:30],
+        "company": str(data.get("company", "")).strip()[:120],
+        "jobTitle": str(data.get("jobTitle", "")).strip()[:120],
+        "addressLine1": str(data.get("addressLine1", "")).strip()[:160],
+        "addressLine2": str(data.get("addressLine2", "")).strip()[:160],
+        "city": str(data.get("city", "")).strip()[:80],
+        "state": str(data.get("state", "")).strip()[:80],
+        "postalCode": str(data.get("postalCode", "")).strip()[:30],
+        "country": str(data.get("country", "")).strip()[:80],
+        "timezone": str(data.get("timezone", TZ)).strip()[:80],
+        "source": str(data.get("source", "Manual")).strip()[:80],
+        "notes": str(data.get("notes", "")).strip()[:2000],
+        "tags": [str(tag).strip()[:40] for tag in data.get("tags", []) if str(tag).strip()][:20],
+        "customFields": {str(k).strip()[:60]: str(v).strip()[:300] for k, v in custom_fields.items() if str(k).strip()},
+    }
+
+
+def create_contact(context, data):
+    clean = clean_contact_data(data)
+    now = datetime.utcnow().isoformat() + "Z"
+    item = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"CONTACT#{clean['normalizedEmail']}", "entity": "contact", "id": str(uuid.uuid4()), **clean, "createdAtUtc": now, "updatedAtUtc": now}
+    existing = table.get_item(Key={"pk": item["pk"], "sk": item["sk"]}).get("Item")
+    if existing:
+        raise ValueError("A contact already exists with this email.")
+    table.put_item(Item=item)
+    add_contact_activity(context["workspaceSlug"], item["id"], "ContactCreated", "Contact created", "Created manually in Contacts.")
+    return contact_shape(item)
+
+
+def find_contact_item(workspace_slug, contact_id):
+    for item in table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("CONTACT#")).get("Items", []):
+        if item.get("id") == contact_id:
+            return item
+    return None
+
+
+def get_contact_by_email(workspace_slug, email):
+    return table.get_item(Key={"pk": workspace_pk(workspace_slug), "sk": f"CONTACT#{normalize_email(email)}"}).get("Item")
+
+
+def get_contact_by_id(workspace_slug, contact_id):
+    item = find_contact_item(workspace_slug, contact_id)
+    if not item:
+        raise ValueError("Contact not found.")
+    return contact_shape(item)
+
+
+def update_contact(context, contact_id, data):
+    current = find_contact_item(context["workspaceSlug"], contact_id)
+    if not current:
+        raise ValueError("Contact not found.")
+    clean = clean_contact_data(data)
+    now = datetime.utcnow().isoformat() + "Z"
+    updated = {**current, **clean, "updatedAtUtc": now}
+    old_key = {"pk": current["pk"], "sk": current["sk"]}
+    updated["sk"] = f"CONTACT#{clean['normalizedEmail']}"
+    if old_key["sk"] != updated["sk"]:
+        table.delete_item(Key=old_key)
+    table.put_item(Item=updated)
+    add_contact_activity(context["workspaceSlug"], contact_id, "ContactUpdated", "Contact updated", "Contact profile was edited.")
+    return contact_shape(updated)
+
+
+def upsert_booking_contact(workspace_slug, customer, timezone):
+    pk = workspace_pk(workspace_slug)
+    email = customer["email"].strip().lower()
+    now = datetime.utcnow().isoformat() + "Z"
+    existing = table.get_item(Key={"pk": pk, "sk": f"CONTACT#{email}"}).get("Item") or {}
+    item = {
+        **existing,
+        "pk": pk,
+        "sk": f"CONTACT#{email}",
+        "entity": "contact",
+        "id": existing.get("id", str(uuid.uuid4())),
+        "firstName": customer["firstName"],
+        "lastName": customer["lastName"],
+        "email": customer["email"],
+        "normalizedEmail": email,
+        "phone": customer["phone"],
+        "timezone": timezone,
+        "source": existing.get("source", "CalendarBooking"),
+        "customFields": existing.get("customFields", {}),
+        "tags": existing.get("tags", []),
+        "createdAtUtc": existing.get("createdAtUtc", now),
+        "updatedAtUtc": now,
+    }
+    table.put_item(Item=item)
+    return item
+
+
+def add_contact_activity(workspace_slug, contact_id, activity_type, title, description="", metadata=None):
+    activity_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat() + "Z"
+    item = {"pk": workspace_pk(workspace_slug), "sk": f"ACTIVITY#{contact_id}#{now}#{activity_id}", "entity": "contactActivity", "id": activity_id, "contactId": contact_id, "type": activity_type, "title": title, "description": description, "metadata": metadata or {}, "occurredAtUtc": now}
+    table.put_item(Item=item)
+    return item
+
+
+def list_contact_activity(workspace_slug, contact_id):
+    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with(f"ACTIVITY#{contact_id}#"), ScanIndexForward=False)
+    return [{k: item.get(k) for k in ["id", "contactId", "type", "title", "description", "occurredAtUtc", "metadata"]} for item in result.get("Items", [])]
+
+
+def list_contact_tasks(workspace_slug, contact_id):
+    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with(f"TASK#{contact_id}#"))
+    return [{k: item.get(k) for k in ["id", "contactId", "title", "description", "dueDate", "status", "createdAtUtc", "completedAtUtc"]} for item in result.get("Items", [])]
+
+
+def create_contact_task(context, contact_id, data):
+    if not find_contact_item(context["workspaceSlug"], contact_id):
+        raise ValueError("Contact not found.")
+    title = str(data.get("title", "")).strip()
+    if not title:
+        raise ValueError("Task title is required.")
+    task_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat() + "Z"
+    item = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"TASK#{contact_id}#{task_id}", "entity": "contactTask", "id": task_id, "contactId": contact_id, "title": title[:160], "description": str(data.get("description", "")).strip()[:1000], "dueDate": str(data.get("dueDate", "")).strip()[:20], "status": "Open", "createdAtUtc": now}
+    table.put_item(Item=item)
+    add_contact_activity(context["workspaceSlug"], contact_id, "TaskCreated", "Task created", title)
+    return {k: item.get(k) for k in ["id", "contactId", "title", "description", "dueDate", "status", "createdAtUtc", "completedAtUtc"]}
+
+
+def update_contact_task(context, contact_id, task_id, data):
+    key = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"TASK#{contact_id}#{task_id}"}
+    current = table.get_item(Key=key).get("Item")
+    if not current:
+        raise ValueError("Task not found.")
+    status = data.get("status", current.get("status", "Open"))
+    updated = {**current, "title": str(data.get("title", current.get("title", ""))).strip()[:160], "description": str(data.get("description", current.get("description", ""))).strip()[:1000], "dueDate": str(data.get("dueDate", current.get("dueDate", ""))).strip()[:20], "status": "Done" if status == "Done" else "Open"}
+    if updated["status"] == "Done" and current.get("status") != "Done":
+        updated["completedAtUtc"] = datetime.utcnow().isoformat() + "Z"
+        add_contact_activity(context["workspaceSlug"], contact_id, "TaskCompleted", "Task completed", updated["title"])
+    table.put_item(Item=updated)
+    return {k: updated.get(k) for k in ["id", "contactId", "title", "description", "dueDate", "status", "createdAtUtc", "completedAtUtc"]}
+
+
 def get_workspace(workspace_slug):
     if workspace_slug == WORKSPACE_SLUG:
         workspace = table.get_item(Key={"pk": workspace_pk(workspace_slug), "sk": "META"}).get("Item")
@@ -429,6 +608,10 @@ def handle_public(method, path, query, body):
     appt = get_appointment(workspace_slug, appointment_slug)
 
     if len(parts) == 5 and method == "GET":
+        if query.get("email"):
+            contact = get_contact_by_email(workspace_slug, query["email"])
+            if contact:
+                add_contact_activity(workspace_slug, contact["id"], "PageVisited", "Booking page visited", appt["name"], {"appointmentSlug": appointment_slug})
         return response(200, {"workspaceName": workspace.get("name", "Workspace"), "appointmentTypeName": appt["name"], "description": appt.get("description"), "durationMinutes": appt["durationMinutes"], "locationType": appt.get("locationType"), "locationValue": appt.get("locationValue"), "timezone": appt.get("timezone", TZ), "serviceIntervalMinutes": int(appt.get("serviceIntervalMinutes", 15)), "theme": get_theme(workspace_slug)})
     if len(parts) == 6 and parts[5] == "slots" and method == "GET":
         return response(200, {"timezone": query.get("timezone", TZ), "slots": generate_slots(appt, query["from"], query["to"], query.get("timezone", TZ))})
@@ -509,10 +692,12 @@ def create_booking(appt, data):
         raise ConflictError("The selected slot has just been booked.")
 
     booking_id = str(uuid.uuid4())
+    workspace_slug = appt["pk"].replace("WS#", "", 1)
     email = customer["email"].strip().lower()
     now = datetime.utcnow().isoformat() + "Z"
-    table.put_item(Item={"pk": appt["pk"], "sk": f"CONTACT#{email}", "entity": "contact", "id": str(uuid.uuid4()), "firstName": customer["firstName"], "lastName": customer["lastName"], "email": customer["email"], "normalizedEmail": email, "phone": customer["phone"], "timezone": data.get("timezone", TZ), "source": "CalendarBooking", "updatedAtUtc": now})
+    contact = upsert_booking_contact(workspace_slug, customer, data.get("timezone", TZ))
     table.put_item(Item={"pk": appt["pk"], "sk": f"BOOKING#{booking_id}", "entity": "booking", "id": booking_id, "appointmentTypeId": appt["id"], "userId": appt["assignedUserId"], "status": "Confirmed", "startUtc": start.isoformat().replace("+00:00", "Z"), "endUtc": end.isoformat().replace("+00:00", "Z"), "blockedStartUtc": blocked_start.isoformat().replace("+00:00", "Z"), "blockedEndUtc": blocked_end.isoformat().replace("+00:00", "Z"), "customerName": f"{customer['firstName']} {customer['lastName']}".strip(), "customerEmail": customer["email"], "customerPhone": customer["phone"], "notes": data.get("notes"), "createdAtUtc": now})
+    add_contact_activity(workspace_slug, contact["id"], "AppointmentBooked", "Appointment booked", appt["name"], {"bookingId": booking_id, "startUtc": start.isoformat().replace("+00:00", "Z")})
     return {"bookingId": booking_id, "status": "Confirmed", "startUtc": start.isoformat().replace("+00:00", "Z"), "endUtc": end.isoformat().replace("+00:00", "Z")}
 
 

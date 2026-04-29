@@ -49,6 +49,50 @@ export type Booking = {
   customerEmail: string;
 };
 
+export type Contact = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+  company?: string;
+  jobTitle?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+  timezone?: string;
+  source?: string;
+  notes?: string;
+  tags?: string[];
+  customFields?: Record<string, string>;
+  createdAtUtc?: string;
+  updatedAtUtc?: string;
+};
+
+export type ContactTask = {
+  id: string;
+  contactId: string;
+  title: string;
+  description?: string;
+  dueDate?: string;
+  status: "Open" | "Done";
+  createdAtUtc?: string;
+  completedAtUtc?: string;
+};
+
+export type ContactActivity = {
+  id: string;
+  contactId: string;
+  type: string;
+  title: string;
+  description?: string;
+  occurredAtUtc: string;
+  metadata?: Record<string, string>;
+};
+
 export type UnavailabilityDate = {
   date: string;
   reason?: string;
