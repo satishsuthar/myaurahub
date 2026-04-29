@@ -1,0 +1,15 @@
+bin/
+obj/
+node_modules/
+dist/
+build/
+.vs/
+.vscode/
+*.user
+*.suo
+*.log
+*.png
+*.tsbuildinfo
+frontend/dist/
+frontend/node_modules/
+serverless/aws/build/
