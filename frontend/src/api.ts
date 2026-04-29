@@ -148,6 +148,7 @@ export type AutomationRule = {
   name: string;
   description?: string;
   trigger: AutomationTrigger;
+  triggers?: AutomationTrigger[];
   actions: AutomationAction[];
   isActive: boolean;
   createdAtUtc?: string;

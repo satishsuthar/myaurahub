@@ -761,11 +761,16 @@ def update_opportunity(context, opportunity_id, data):
 VALID_AUTOMATION_TRIGGERS = {
     "AppointmentBooked",
     "BookingCancelled",
+    "AppointmentTypeCreated",
+    "AvailabilityChanged",
     "ContactCreated",
     "ContactUpdated",
+    "ContactTagAdded",
     "PageVisited",
     "OpportunityCreated",
     "OpportunityMoved",
+    "PipelineCreated",
+    "AutomationStarted",
     "TaskCompleted",
 }
 
@@ -776,11 +781,20 @@ VALID_AUTOMATION_ACTIONS = {
     "SendEmail",
     "InternalNotification",
     "Webhook",
+    "IfElse",
+    "Wait",
+    "Branch",
+    "Goal",
+    "StartAutomation",
+    "StopAutomation",
 }
 
 
 def automation_shape(item):
-    return {k: item.get(k) for k in ["id", "name", "description", "trigger", "actions", "isActive", "createdAtUtc", "updatedAtUtc"]}
+    shaped = {k: item.get(k) for k in ["id", "name", "description", "trigger", "triggers", "actions", "isActive", "createdAtUtc", "updatedAtUtc"]}
+    if not shaped.get("triggers") and shaped.get("trigger"):
+        shaped["triggers"] = [shaped["trigger"]]
+    return shaped
 
 
 def list_automations(workspace_slug):
@@ -796,12 +810,17 @@ def clean_automation(data, current=None):
     name = str(data.get("name", current.get("name", "") if current else "")).strip()
     if not name:
         raise ValueError("Automation name is required.")
-    trigger = data.get("trigger", current.get("trigger", {}) if current else {}) or {}
-    trigger_type = str(trigger.get("type", "")).strip()
-    if trigger_type not in VALID_AUTOMATION_TRIGGERS:
-        raise ValueError("Automation trigger is not supported.")
-    filters = trigger.get("filters", {}) if isinstance(trigger.get("filters", {}), dict) else {}
-    clean_filters = {str(k).strip()[:80]: str(v).strip()[:200] for k, v in filters.items() if str(k).strip()}
+    raw_triggers = data.get("triggers")
+    if not isinstance(raw_triggers, list) or not raw_triggers:
+        raw_triggers = [data.get("trigger", current.get("trigger", {}) if current else {}) or {}]
+    triggers = []
+    for trigger in raw_triggers[:10]:
+        trigger_type = str(trigger.get("type", "")).strip()
+        if trigger_type not in VALID_AUTOMATION_TRIGGERS:
+            raise ValueError("Automation trigger is not supported.")
+        filters = trigger.get("filters", {}) if isinstance(trigger.get("filters", {}), dict) else {}
+        clean_filters = {str(k).strip()[:80]: str(v).strip()[:200] for k, v in filters.items() if str(k).strip()}
+        triggers.append({"type": trigger_type, "filters": clean_filters})
     actions = []
     for index, action in enumerate(data.get("actions", current.get("actions", []) if current else []) or []):
         action_type = str(action.get("type", "")).strip()
@@ -818,8 +837,9 @@ def clean_automation(data, current=None):
     return {
         "name": name[:140],
         "description": str(data.get("description", current.get("description", "") if current else "") or "").strip()[:1000],
-        "trigger": {"type": trigger_type, "filters": clean_filters},
-        "actions": actions[:10],
+        "trigger": triggers[0],
+        "triggers": triggers,
+        "actions": actions[:50],
         "isActive": bool(data.get("isActive", current.get("isActive", True) if current else True)),
     }
 

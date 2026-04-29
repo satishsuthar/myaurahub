@@ -67,14 +67,19 @@ const emptyTask = { title: "", description: "", dueDate: "" };
 const emptyPipeline = { name: "", description: "", stagesText: "New Lead\nQualified\nProposal\nWon" };
 const emptyOpportunity = { title: "", value: 0, currency: "AUD", contactId: "", expectedCloseDate: "", source: "", notes: "" };
 const automationTriggerOptions = [
-  { value: "AppointmentBooked", label: "Appointment booked" },
-  { value: "BookingCancelled", label: "Booking cancelled" },
-  { value: "ContactCreated", label: "Contact created" },
-  { value: "ContactUpdated", label: "Contact updated" },
-  { value: "PageVisited", label: "Booking page visited" },
-  { value: "OpportunityCreated", label: "Opportunity created" },
-  { value: "OpportunityMoved", label: "Opportunity moved" },
-  { value: "TaskCompleted", label: "Task completed" }
+  { value: "AppointmentBooked", label: "Appointment booked", module: "Scheduling" },
+  { value: "BookingCancelled", label: "Booking cancelled", module: "Scheduling" },
+  { value: "AppointmentTypeCreated", label: "Appointment type created", module: "Scheduling" },
+  { value: "AvailabilityChanged", label: "Availability changed", module: "Scheduling" },
+  { value: "ContactCreated", label: "Contact created", module: "Contacts" },
+  { value: "ContactUpdated", label: "Contact updated", module: "Contacts" },
+  { value: "ContactTagAdded", label: "Contact tag added", module: "Contacts" },
+  { value: "PageVisited", label: "Booking page visited", module: "Tracking" },
+  { value: "OpportunityCreated", label: "Opportunity created", module: "Opportunities" },
+  { value: "OpportunityMoved", label: "Opportunity moved", module: "Opportunities" },
+  { value: "PipelineCreated", label: "Pipeline created", module: "Opportunities" },
+  { value: "AutomationStarted", label: "Automation started", module: "Automations" },
+  { value: "TaskCompleted", label: "Task completed", module: "Tasks" }
 ];
 const automationActionOptions = [
   { value: "CreateTask", label: "Create task" },
@@ -82,9 +87,24 @@ const automationActionOptions = [
   { value: "RemoveContactTag", label: "Remove contact tag" },
   { value: "SendEmail", label: "Send email" },
   { value: "InternalNotification", label: "Internal notification" },
-  { value: "Webhook", label: "Webhook" }
+  { value: "Webhook", label: "Webhook" },
+  { value: "IfElse", label: "If / else condition" },
+  { value: "Wait", label: "Wait" },
+  { value: "Branch", label: "Branch" },
+  { value: "Goal", label: "Goal" },
+  { value: "StartAutomation", label: "Start another automation" },
+  { value: "StopAutomation", label: "Stop automation" }
 ];
-const emptyAutomation = { name: "", description: "", triggerType: "AppointmentBooked", filterKey: "", filterValue: "", actions: [{ id: "action-1", type: "CreateTask", configText: "title=Follow up with contact\ndueInDays=1" }], isActive: true };
+const emptyAutomation = {
+  name: "",
+  description: "",
+  triggers: [{ id: "trigger-1", type: "AppointmentBooked", filterKey: "", filterValue: "" }],
+  actions: [
+    { id: "action-1", type: "IfElse", configText: "condition=contact has tag new-client\ntrueLabel=Yes\nfalseLabel=No" },
+    { id: "action-2", type: "CreateTask", configText: "title=Follow up with contact\ndueInDays=1" }
+  ],
+  isActive: true
+};
 const customFieldTypes = [
   { group: "Text input", options: [["text", "Single line"], ["multiline", "Multiline"], ["textList", "Text box list"]] },
   { group: "Values", options: [["number", "Number"], ["phone", "Phone"], ["currency", "Currency"]] },
@@ -458,19 +478,31 @@ function AdminApp() {
     });
   }
 
+  function addAutomationTrigger() {
+    setAutomationForm({
+      ...automationForm,
+      triggers: [...automationForm.triggers, { id: `trigger-${Date.now()}`, type: "ContactCreated", filterKey: "", filterValue: "" }]
+    });
+  }
+
+  function updateAutomationTrigger(id: string, patch: Partial<(typeof automationForm.triggers)[number]>) {
+    setAutomationForm({ ...automationForm, triggers: automationForm.triggers.map((trigger) => trigger.id === id ? { ...trigger, ...patch } : trigger) });
+  }
+
   function updateAutomationAction(id: string, patch: Partial<(typeof automationForm.actions)[number]>) {
     setAutomationForm({ ...automationForm, actions: automationForm.actions.map((action) => action.id === id ? { ...action, ...patch } : action) });
   }
 
   function editAutomation(rule: AutomationRule) {
-    const filterEntries = Object.entries(rule.trigger.filters ?? {});
+    const triggers = (rule.triggers?.length ? rule.triggers : [rule.trigger]).map((trigger, index) => {
+      const filterEntries = Object.entries(trigger.filters ?? {});
+      return { id: `trigger-${index + 1}`, type: trigger.type, filterKey: filterEntries[0]?.[0] ?? "", filterValue: filterEntries[0]?.[1] ?? "" };
+    });
     setEditingAutomationId(rule.id);
     setAutomationForm({
       name: rule.name,
       description: rule.description ?? "",
-      triggerType: rule.trigger.type,
-      filterKey: filterEntries[0]?.[0] ?? "",
-      filterValue: filterEntries[0]?.[1] ?? "",
+      triggers,
       actions: rule.actions.map((action) => ({ id: action.id, type: action.type, configText: serializeActionConfig(action.config) })),
       isActive: rule.isActive
     });
@@ -488,11 +520,14 @@ function AdminApp() {
       type: action.type,
       config: parseActionConfig(action.configText)
     }));
-    const filters = automationForm.filterKey.trim() ? { [automationForm.filterKey.trim()]: automationForm.filterValue.trim() } : {};
+    const triggers = automationForm.triggers.map((trigger) => ({
+      type: trigger.type,
+      filters: trigger.filterKey.trim() ? { [trigger.filterKey.trim()]: trigger.filterValue.trim() } : {}
+    }));
     try {
       const saved = await api<AutomationRule>(editingAutomationId ? `/api/automations/${editingAutomationId}` : "/api/automations", {
         method: editingAutomationId ? "PUT" : "POST",
-        body: JSON.stringify({ name: automationForm.name, description: automationForm.description, trigger: { type: automationForm.triggerType, filters }, actions, isActive: automationForm.isActive })
+        body: JSON.stringify({ name: automationForm.name, description: automationForm.description, trigger: triggers[0], triggers, actions, isActive: automationForm.isActive })
       });
       setAutomations(editingAutomationId ? automations.map((item) => item.id === saved.id ? saved : item) : [saved, ...automations]);
       setAutomationForm(emptyAutomation);
@@ -1005,8 +1040,8 @@ function AdminApp() {
             <Panel title={editingAutomationId ? "Edit Automation" : "Create Automation"} icon={<Workflow size={18} />}>
               <AutomationDiagram
                 title={automationForm.name || "New automation"}
-                triggerLabel={automationTriggerOptions.find((item) => item.value === automationForm.triggerType)?.label ?? automationForm.triggerType}
-                filterLabel={automationForm.filterKey ? `${automationForm.filterKey} = ${automationForm.filterValue || "any"}` : ""}
+                triggerLabels={automationForm.triggers.map((trigger) => automationTriggerOptions.find((item) => item.value === trigger.type)?.label ?? trigger.type)}
+                filterLabels={automationForm.triggers.filter((trigger) => trigger.filterKey).map((trigger) => `${trigger.filterKey} = ${trigger.filterValue || "any"}`)}
                 actions={automationForm.actions.map((action) => automationActionOptions.find((item) => item.value === action.type)?.label ?? action.type)}
                 isActive={automationForm.isActive}
               />
@@ -1022,15 +1057,23 @@ function AdminApp() {
               <textarea className="mt-4 min-h-20 w-full rounded-md border border-[#cbd5e1] bg-white p-3 text-sm" placeholder="Description" value={automationForm.description} onChange={(event) => setAutomationForm({ ...automationForm, description: event.target.value })} />
 
               <div className="mt-5 rounded-md border border-[#dde3ec] bg-[#fbfcff] p-4">
-                <div className="mb-3 text-sm font-black text-[#16202a]">When this happens</div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <label className="text-sm font-bold text-[#334155]">Trigger
-                    <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={automationForm.triggerType} onChange={(event) => setAutomationForm({ ...automationForm, triggerType: event.target.value })}>
-                      {automationTriggerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
-                  </label>
-                  <Field label="Filter field" value={automationForm.filterKey} onChange={(value) => setAutomationForm({ ...automationForm, filterKey: value })} />
-                  <Field label="Filter value" value={automationForm.filterValue} onChange={(value) => setAutomationForm({ ...automationForm, filterValue: value })} />
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="text-sm font-black text-[#16202a]">Start triggers</div>
+                  <button className="inline-flex items-center gap-2 rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold" onClick={addAutomationTrigger}><Plus size={15} /> Add trigger</button>
+                </div>
+                <div className="space-y-3">
+                  {automationForm.triggers.map((trigger, index) => (
+                    <div key={trigger.id} className="grid gap-3 rounded-md border border-[#dde3ec] bg-white p-3 md:grid-cols-[1fr_1fr_1fr_40px]">
+                      <label className="text-sm font-bold text-[#334155]">Trigger {index + 1}
+                        <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={trigger.type} onChange={(event) => updateAutomationTrigger(trigger.id, { type: event.target.value })}>
+                          {automationTriggerOptions.map((option) => <option key={option.value} value={option.value}>{option.module} - {option.label}</option>)}
+                        </select>
+                      </label>
+                      <Field label="Filter field" value={trigger.filterKey} onChange={(value) => updateAutomationTrigger(trigger.id, { filterKey: value })} />
+                      <Field label="Filter value" value={trigger.filterValue} onChange={(value) => updateAutomationTrigger(trigger.id, { filterValue: value })} />
+                      <button className="mt-6 rounded-md border border-rose-200 p-2 text-rose-700 disabled:opacity-40" disabled={automationForm.triggers.length === 1} onClick={() => setAutomationForm({ ...automationForm, triggers: automationForm.triggers.filter((item) => item.id !== trigger.id) })}><Trash2 size={15} /></button>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -1074,8 +1117,8 @@ function AdminApp() {
                         {rule.description && <p className="mt-1 text-sm text-[#64748b]">{rule.description}</p>}
                         <AutomationDiagram
                           title={rule.name}
-                          triggerLabel={automationTriggerOptions.find((item) => item.value === rule.trigger.type)?.label ?? rule.trigger.type}
-                          filterLabel={Object.entries(rule.trigger.filters ?? {}).map(([key, value]) => `${key} = ${value}`).join(", ")}
+                          triggerLabels={(rule.triggers?.length ? rule.triggers : [rule.trigger]).map((trigger) => automationTriggerOptions.find((item) => item.value === trigger.type)?.label ?? trigger.type)}
+                          filterLabels={(rule.triggers?.length ? rule.triggers : [rule.trigger]).flatMap((trigger) => Object.entries(trigger.filters ?? {}).map(([key, value]) => `${key} = ${value}`))}
                           actions={rule.actions.map((action) => automationActionOptions.find((item) => item.value === action.type)?.label ?? action.type)}
                           isActive={rule.isActive}
                           compact
@@ -1534,24 +1577,34 @@ function Panel({ title, icon, children }: { title: string; icon: React.ReactNode
   );
 }
 
-function AutomationDiagram({ title, triggerLabel, filterLabel, actions, isActive, compact = false }: { title: string; triggerLabel: string; filterLabel?: string; actions: string[]; isActive: boolean; compact?: boolean }) {
+function AutomationDiagram({ title, triggerLabels, filterLabels = [], actions, isActive, compact = false }: { title: string; triggerLabels: string[]; filterLabels?: string[]; actions: string[]; isActive: boolean; compact?: boolean }) {
   const visibleActions = actions.length ? actions : ["No action selected"];
   return (
-    <div className={`${compact ? "mt-3 p-3" : "mb-5 p-4"} overflow-x-auto rounded-md border border-[#dde3ec] bg-[linear-gradient(135deg,#f8fbff,#fffdf4_52%,#f7fbf8)]`}>
+    <div className={`${compact ? "mt-3 p-3" : "mb-5 p-4"} rounded-md border border-[#dde3ec] bg-[linear-gradient(135deg,#f8fbff,#fffdf4_52%,#f7fbf8)]`}>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="text-sm font-black text-[#16202a]">{compact ? "Flow" : title}</div>
+        <div className="text-sm font-black text-[#16202a]">{compact ? "Workflow canvas" : title}</div>
         <span className={`rounded-full px-2 py-1 text-[11px] font-black ${isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{isActive ? "Active" : "Inactive"}</span>
       </div>
-      <div className="flex min-w-max items-center gap-3">
-        <DiagramNode label="Trigger" value={triggerLabel} tone="blue" />
-        {filterLabel && <>
-          <DiagramArrow />
-          <DiagramNode label="Filter" value={filterLabel} tone="yellow" />
+      <div className="mx-auto flex max-w-xl flex-col items-center">
+        <div className="grid w-full gap-2 sm:grid-cols-2">
+          {triggerLabels.map((trigger, index) => <DiagramNode key={`${trigger}-${index}`} label={`Trigger ${index + 1}`} value={trigger} tone="blue" />)}
+        </div>
+        {filterLabels.length > 0 && <>
+          <DiagramArrow vertical />
+          <div className="grid w-full gap-2 sm:grid-cols-2">
+            {filterLabels.map((filter, index) => <DiagramNode key={`${filter}-${index}`} label={`Filter ${index + 1}`} value={filter} tone="yellow" />)}
+          </div>
         </>}
         {visibleActions.map((action, index) => (
           <React.Fragment key={`${action}-${index}`}>
-            <DiagramArrow />
+            <DiagramArrow vertical />
             <DiagramNode label={`Action ${index + 1}`} value={action} tone={index % 2 === 0 ? "green" : "pink"} />
+            {action.toLowerCase().includes("if / else") && (
+              <div className="grid w-full gap-3 sm:grid-cols-2">
+                <div className="rounded-md border border-[#bbf7d0] bg-white p-3 text-center text-xs font-black text-[#137333]">YES branch continues</div>
+                <div className="rounded-md border border-[#fbcfe8] bg-white p-3 text-center text-xs font-black text-[#9d174d]">NO branch continues</div>
+              </div>
+            )}
           </React.Fragment>
         ))}
       </div>
@@ -1559,7 +1612,8 @@ function AutomationDiagram({ title, triggerLabel, filterLabel, actions, isActive
   );
 }
 
-function DiagramArrow() {
+function DiagramArrow({ vertical = false }: { vertical?: boolean }) {
+  if (vertical) return <div className="my-2 flex h-8 flex-col items-center text-[#94a3b8]"><span className="h-7 w-px bg-[#cbd5e1]" /><span className="-mt-2 text-lg">⌄</span></div>;
   return <div className="flex items-center text-[#94a3b8]"><span className="h-px w-8 bg-[#cbd5e1]" /><span className="-ml-1 text-lg">›</span></div>;
 }
 
@@ -1571,7 +1625,7 @@ function DiagramNode({ label, value, tone }: { label: string; value: string; ton
     pink: "border-[#fbcfe8] bg-[#fff1f8] text-[#9d174d]"
   };
   return (
-    <div className={`min-h-20 w-44 rounded-md border p-3 shadow-sm ${tones[tone]}`}>
+    <div className={`min-h-20 w-full rounded-md border p-3 text-center shadow-sm ${tones[tone]}`}>
       <div className="text-[10px] font-black uppercase tracking-wide opacity-75">{label}</div>
       <div className="mt-1 text-sm font-black leading-snug">{value}</div>
     </div>
