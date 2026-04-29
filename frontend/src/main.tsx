@@ -119,11 +119,17 @@ function AdminApp() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f7f8f4] text-ink">
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-stone-200 bg-white px-4 py-5 lg:block">
-        <div className="mb-8">
-          <div className="text-lg font-semibold">{authUser.workspaceName}</div>
-          <div className="text-sm text-stone-500">/{authUser.workspaceSlug}</div>
+    <main className="min-h-screen bg-[#f6f7fb] text-[#16202a]">
+      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-[#dde3ec] bg-[#fbfcff] px-4 py-5 lg:block">
+        <div className="mb-7 rounded-md border border-[#e5e9f2] bg-white p-3 shadow-sm">
+          <div className="mb-3 flex gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-[#4285f4]" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#34a853]" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#fbbc05]" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#ea4335]" />
+          </div>
+          <div className="display-font text-lg font800 font-bold">{authUser.workspaceName}</div>
+          <div className="text-xs font-medium text-[#64748b]">/{authUser.workspaceSlug}</div>
         </div>
         <nav className="space-y-1 text-sm font-medium">
           <NavItem icon={<Calendar size={17} />} label="Calendars" active={activeTab === "calendars"} onClick={() => setActiveTab("calendars")} />
@@ -135,13 +141,13 @@ function AdminApp() {
       </aside>
 
       <section className="lg:pl-64">
-        <header className="border-b border-stone-200 bg-white">
-          <div className="flex items-center justify-between px-5 py-4 lg:px-8">
+        <header className="border-b border-[#dde3ec] bg-white/95">
+          <div className="flex items-center justify-between px-5 py-3 lg:px-6">
             <div>
-              <h1 className="text-xl font-semibold">Calendar Booking</h1>
-              <p className="text-sm text-stone-500">Appointment types, availability, buffers, notices, and bookings.</p>
+              <h1 className="display-font text-xl font-bold">Calendar Booking</h1>
+              <p className="text-xs font-medium text-[#64748b]">Appointment types, availability, buffers, notices, and bookings.</p>
             </div>
-            <a className="inline-flex items-center gap-2 rounded-md bg-ink px-4 py-2 text-sm font-semibold text-white" href={`/book/${authUser.workspaceSlug}/${appointments[0]?.slug ?? "discovery-call"}`}>
+            <a className="inline-flex items-center gap-2 rounded-md bg-[#2563eb] px-4 py-2 text-sm font-bold text-white shadow-sm shadow-blue-200" href={`/book/${authUser.workspaceSlug}/${appointments[0]?.slug ?? "discovery-call"}`}>
               <ExternalLink size={16} /> Open booking page
             </a>
           </div>
@@ -149,13 +155,13 @@ function AdminApp() {
 
         {message && <div className="mx-5 mt-5 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 lg:mx-8">{message}</div>}
 
-        <div className="px-5 py-5 lg:px-8">
+        <div className="px-5 py-5 lg:px-6">
           {activeTab === "calendars" && <section className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-5">
             <Panel title="Appointment Types" icon={<Calendar size={18} />}>
-              <div className="overflow-hidden rounded-md border border-stone-200">
+              <div className="overflow-hidden rounded-md border border-[#dde3ec]">
                 <table className="w-full border-collapse bg-white text-sm">
-                  <thead className="bg-stone-50 text-left text-xs uppercase tracking-wide text-stone-500">
+                  <thead className="bg-[#f2f6ff] text-left text-xs uppercase tracking-wide text-[#64748b]">
                     <tr>
                       <th className="px-4 py-3">Name</th>
                       <th className="px-4 py-3">Duration</th>
@@ -168,7 +174,7 @@ function AdminApp() {
                   </thead>
                   <tbody>
                     {appointments.map((item) => (
-                      <tr key={item.id} className="border-t border-stone-200">
+                      <tr key={item.id} className="border-t border-[#e6ebf2]">
                         <td className="px-4 py-3 font-medium">{item.name}</td>
                         <td className="px-4 py-3">{item.durationMinutes} min</td>
                         <td className="px-4 py-3">{item.serviceIntervalMinutes ?? 15} min</td>
@@ -179,10 +185,10 @@ function AdminApp() {
                           </a>
                         </td>
                         <td className="px-4 py-3">
-                          <span className="rounded bg-mint px-2 py-1 text-xs font-semibold">{item.isActive ? "Active" : "Inactive"}</span>
+                          <span className="rounded bg-[#e6f7ef] px-2 py-1 text-xs font-bold text-[#137333]">{item.isActive ? "Active" : "Inactive"}</span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button className="rounded-md border border-stone-300 px-3 py-1 text-xs font-semibold" onClick={() => editAppointment(item)}>Edit</button>
+                          <button className="rounded-md border border-[#cbd5e1] bg-white px-3 py-1 text-xs font-bold hover:border-[#2563eb] hover:text-[#2563eb]" onClick={() => editAppointment(item)}>Edit</button>
                         </td>
                       </tr>
                     ))}
@@ -230,8 +236,8 @@ function AdminApp() {
                 ))}
               </div>
               <div className="mt-4 flex gap-2">
-                <button className="rounded-md border border-stone-300 bg-white px-4 py-2 text-sm" onClick={() => setRules([...rules, { dayOfWeek: "Monday", startTime: "09:00", endTime: "17:00" }])}>Add block</button>
-                <button className="rounded-md bg-ink px-4 py-2 text-sm font-semibold text-white" onClick={saveAvailability}>Save</button>
+                <button className="rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" onClick={() => setRules([...rules, { dayOfWeek: "Monday", startTime: "09:00", endTime: "17:00" }])}>Add block</button>
+                <button className="rounded-md bg-[#2563eb] px-4 py-2 text-sm font-bold text-white" onClick={saveAvailability}>Save</button>
               </div>
             </Panel>
             <Panel title="Fixed Date Unavailability & Holidays" icon={<Calendar size={18} />}>
@@ -246,8 +252,8 @@ function AdminApp() {
                 {unavailability.length === 0 && <p className="text-sm text-stone-600">No unavailable dates set.</p>}
               </div>
               <div className="mt-4 flex gap-2">
-                <button className="rounded-md border border-stone-300 bg-white px-4 py-2 text-sm" onClick={() => setUnavailability([...unavailability, { date: toDateKey(new Date()), reason: "Holiday" }])}>Add date</button>
-                <button className="rounded-md bg-ink px-4 py-2 text-sm font-semibold text-white" onClick={saveUnavailability}>Save unavailable dates</button>
+                <button className="rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" onClick={() => setUnavailability([...unavailability, { date: toDateKey(new Date()), reason: "Holiday" }])}>Add date</button>
+                <button className="rounded-md bg-[#2563eb] px-4 py-2 text-sm font-bold text-white" onClick={saveUnavailability}>Save unavailable dates</button>
               </div>
             </Panel>
           </section>}
@@ -312,23 +318,31 @@ function AuthPage({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => vo
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#f7f8f4] px-4 text-ink">
-      <section className="w-full max-w-md rounded-md border border-stone-200 bg-white p-7 shadow-sm">
-        <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-full bg-ink text-white">
+    <main className="flex min-h-screen items-center justify-center bg-[#f6f7fb] px-4 text-[#16202a]">
+      <section className="w-full max-w-md rounded-md border border-[#dde3ec] bg-white p-6 shadow-[0_8px_28px_rgba(15,23,42,0.08)]">
+        <div className="mb-5 flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-md bg-[#2563eb] text-white">
           <Lock size={20} />
+          </div>
+          <div className="flex gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-[#4285f4]" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#34a853]" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#fbbc05]" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#ea4335]" />
+          </div>
         </div>
-        <h1 className="text-2xl font-semibold">{mode === "signup" ? "Create your booking workspace" : "Login to your workspace"}</h1>
-        <p className="mt-2 text-sm text-stone-600">White-label calendar booking for coaches, consultants, clinics, and personal brands.</p>
+        <h1 className="display-font text-2xl font-bold">{mode === "signup" ? "Create your booking workspace" : "Login to your workspace"}</h1>
+        <p className="mt-2 text-sm leading-6 text-[#64748b]">White-label calendar booking for coaches, consultants, clinics, and personal brands.</p>
         <form className="mt-6 space-y-4" onSubmit={submit}>
           {mode === "signup" && <Field label="Business / workspace name" value={workspaceName} onChange={setWorkspaceName} />}
           <Field label="Email" value={email} onChange={setEmail} />
           <Field label="Password" type="password" value={password} onChange={setPassword} />
           {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-          <button className="w-full rounded-md bg-ink px-4 py-3 text-sm font-semibold text-white">
+          <button className="w-full rounded-md bg-[#2563eb] px-4 py-3 text-sm font-bold text-white shadow-sm shadow-blue-200">
             {mode === "signup" ? "Create account" : "Login"}
           </button>
         </form>
-        <button className="mt-4 text-sm font-semibold text-moss" onClick={() => setMode(mode === "signup" ? "login" : "signup")}>
+        <button className="mt-4 text-sm font-bold text-[#2563eb]" onClick={() => setMode(mode === "signup" ? "login" : "signup")}>
           {mode === "signup" ? "Already have an account? Login" : "Need an account? Sign up"}
         </button>
       </section>
@@ -398,8 +412,8 @@ function PublicBookingPage() {
 
   if (confirmed && selectedSlot && metadata) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f7f7f5] px-4 py-10 text-[#1f1f1f]">
-        <section className="w-full max-w-xl rounded-lg border border-[#dadada] bg-white p-8 text-center shadow-sm">
+      <main className="flex min-h-screen items-center justify-center bg-[#f6f7fb] px-4 py-10 text-[#16202a]">
+        <section className="w-full max-w-xl rounded-lg border border-[#dde3ec] bg-white p-8 text-center shadow-[0_8px_28px_rgba(15,23,42,0.08)]">
           <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-[#e7f7ee] text-[#006b3f]">
             <Check size={24} />
           </div>
@@ -417,14 +431,22 @@ function PublicBookingPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f7f7f5] px-4 py-5 text-[#1f1f1f] md:py-10">
-      <section className="mx-auto grid max-w-6xl overflow-hidden rounded-lg border border-[#dadada] bg-white shadow-[0_1px_8px_rgba(0,0,0,0.08)] lg:grid-cols-[310px_1fr_290px]">
+    <main className="min-h-screen bg-[#f6f7fb] px-4 py-5 text-[#16202a] md:py-8">
+      <section className="mx-auto grid max-w-6xl overflow-hidden rounded-lg border border-[#dde3ec] bg-white shadow-[0_8px_28px_rgba(15,23,42,0.08)] lg:grid-cols-[300px_1fr_280px]">
         <aside className="border-b border-[#e4e4e4] p-6 lg:border-b-0 lg:border-r">
-          <div className="mb-7 flex h-11 w-11 items-center justify-center rounded-full bg-[#1f1f1f] text-sm font-semibold text-white">
-            {(metadata?.workspaceName ?? "A").slice(0, 1)}
+          <div className="mb-6 flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-md bg-[#2563eb] text-sm font-bold text-white">
+              {(metadata?.workspaceName ?? "A").slice(0, 1)}
+            </div>
+            <div className="flex gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#4285f4]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#34a853]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#fbbc05]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#ea4335]" />
+            </div>
           </div>
           <div className="mb-2 text-sm font-semibold text-[#6f6f6f]">{metadata?.workspaceName ?? "Loading"}</div>
-          <h1 className="text-2xl font-bold leading-tight">{metadata?.appointmentTypeName ?? "Loading..."}</h1>
+          <h1 className="display-font text-2xl font-bold leading-tight">{metadata?.appointmentTypeName ?? "Loading..."}</h1>
           <p className="mt-4 text-sm leading-6 text-[#5f5f5f]">{metadata?.description}</p>
           <div className="mt-7 space-y-4 text-sm font-medium text-[#5f5f5f]">
             <div className="flex items-center gap-3"><Clock size={18} /> {metadata?.durationMinutes ?? 30} min</div>
@@ -434,8 +456,8 @@ function PublicBookingPage() {
         </aside>
 
         <section className="border-b border-[#e4e4e4] p-6 lg:border-b-0">
-          <h2 className="mb-6 text-xl font-bold">Select a Date & Time</h2>
-          <div className="mb-6 flex items-center justify-between">
+          <h2 className="display-font mb-5 text-xl font-bold">Select a Date & Time</h2>
+          <div className="mb-5 flex items-center justify-between">
             <button className="flex h-9 w-9 items-center justify-center rounded-full text-xl text-[#006bff] hover:bg-[#eef5ff]" onClick={() => { setVisibleMonth(addMonths(visibleMonth, -1)); setSelectedSlot(null); }}>
               {"<"}
             </button>
@@ -481,7 +503,7 @@ function PublicBookingPage() {
             })}
           </div>
 
-          <div className="mt-8">
+          <div className="mt-6">
             <div className="mb-2 text-sm font-bold">Time zone</div>
             <div className="inline-flex items-center gap-2 rounded-full border border-[#dadada] px-3 py-2 text-sm text-[#4f4f4f]">
               <MapPin size={15} /> Australia/Sydney
@@ -489,7 +511,7 @@ function PublicBookingPage() {
           </div>
         </section>
 
-        <aside className="p-6">
+        <aside className="bg-[#fbfcff] p-6">
           {!selectedSlot && (
             <>
               <h3 className="mb-4 text-base font-bold">
@@ -572,13 +594,16 @@ function buildMonthDays(month: Date) {
 }
 
 function NavItem({ icon, label, active = false, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void }) {
-  return <button className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left ${active ? "bg-mint text-ink" : "text-stone-600 hover:bg-stone-50"}`} onClick={onClick}>{icon}{label}</button>;
+  return <button className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left ${active ? "bg-[#eaf2ff] text-[#174ea6]" : "text-[#64748b] hover:bg-[#f1f5f9]"}`} onClick={onClick}>{icon}{label}</button>;
 }
 
 function Panel({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="rounded-md border border-stone-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-center gap-2 text-lg font-semibold text-ink">{icon}{title}</div>
+    <section className="rounded-md border border-[#dde3ec] bg-white p-4 shadow-sm">
+      <div className="mb-4 flex items-center gap-2 display-font text-base font-bold text-[#16202a]">
+        <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[#f2f6ff] text-[#2563eb]">{icon}</span>
+        {title}
+      </div>
       {children}
     </section>
   );
@@ -587,8 +612,8 @@ function Panel({ title, icon, children }: { title: string; icon: React.ReactNode
 function Field({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
   return (
     <label className="block text-sm">
-      <span className="mb-1 block font-medium text-stone-700">{label}</span>
-      <input className="w-full rounded-md border border-stone-300 bg-white p-2" type={type} value={value} onChange={(event) => onChange(event.target.value)} />
+      <span className="mb-1 block font-semibold text-[#475569]">{label}</span>
+      <input className="w-full rounded-md border border-[#cbd5e1] bg-white p-2 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-blue-100" type={type} value={value} onChange={(event) => onChange(event.target.value)} />
     </label>
   );
 }
