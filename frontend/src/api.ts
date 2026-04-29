@@ -65,6 +65,20 @@ export type AuthResponse = {
   user: AuthUser;
 };
 
+export type ThemeConfig = {
+  preset: string;
+  primary: string;
+  secondary: string;
+  accent: string;
+  danger: string;
+  background: string;
+  surface: string;
+  text: string;
+  muted: string;
+  displayFont: string;
+  bodyFont: string;
+};
+
 export function getAuthToken() {
   return localStorage.getItem(authTokenKey);
 }

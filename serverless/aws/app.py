@@ -18,6 +18,19 @@ WORKSPACE_ID = "11111111-1111-1111-1111-111111111111"
 USER_ID = "22222222-2222-2222-2222-222222222222"
 WORKSPACE_SLUG = "acme-coaching"
 TZ = "Australia/Sydney"
+DEFAULT_THEME = {
+    "preset": "bright",
+    "primary": "#2563eb",
+    "secondary": "#34a853",
+    "accent": "#fbbc05",
+    "danger": "#ea4335",
+    "background": "#f6f7fb",
+    "surface": "#ffffff",
+    "text": "#16202a",
+    "muted": "#64748b",
+    "displayFont": "Plus Jakarta Sans",
+    "bodyFont": "Inter",
+}
 
 dynamodb = boto3.resource("dynamodb")
 table = dynamodb.Table(TABLE_NAME)
@@ -82,6 +95,10 @@ def handler(event, _context):
             return response(200, get_unavailability(context["userId"]))
         if path == "/api/calendar/unavailability" and method == "PUT":
             return response(200, replace_unavailability(context["userId"], body))
+        if path == "/api/workspace/theme" and method == "GET":
+            return response(200, get_theme(context["workspaceSlug"]))
+        if path == "/api/workspace/theme" and method == "PUT":
+            return response(200, update_theme(context["workspaceSlug"], body))
         return response(404, {"error": "Not found"})
     except ValueError as exc:
         return response(400, {"error": str(exc)})
@@ -167,7 +184,7 @@ def signup(data):
     workspace_id = str(uuid.uuid4())
     salt, password_hash = hash_password(password)
     now = datetime.utcnow().isoformat() + "Z"
-    table.put_item(Item={"pk": workspace_pk(workspace_slug), "sk": "META", "id": workspace_id, "name": workspace_name, "slug": workspace_slug, "timezone": TZ, "entity": "workspace", "createdAtUtc": now})
+    table.put_item(Item={"pk": workspace_pk(workspace_slug), "sk": "META", "id": workspace_id, "name": workspace_name, "slug": workspace_slug, "timezone": TZ, "theme": DEFAULT_THEME, "entity": "workspace", "createdAtUtc": now})
     table.put_item(Item={"pk": f"AUTH#{email}", "sk": "USER", "entity": "authUser", "id": user_id, "email": email, "workspaceSlug": workspace_slug, "workspaceName": workspace_name, "passwordSalt": salt, "passwordHash": password_hash, "createdAtUtc": now})
     seed_workspace_defaults(workspace_slug, workspace_id, user_id, workspace_name, now)
     token = sign_token({"userId": user_id, "workspaceSlug": workspace_slug, "email": email, "workspaceName": workspace_name})
@@ -189,7 +206,7 @@ def ensure_seed():
         return
 
     now = datetime.utcnow().isoformat() + "Z"
-    table.put_item(Item={"pk": workspace_pk(), "sk": "META", "id": WORKSPACE_ID, "name": "Acme Coaching", "slug": WORKSPACE_SLUG, "timezone": TZ, "entity": "workspace", "createdAtUtc": now})
+    table.put_item(Item={"pk": workspace_pk(), "sk": "META", "id": WORKSPACE_ID, "name": "Acme Coaching", "slug": WORKSPACE_SLUG, "timezone": TZ, "theme": DEFAULT_THEME, "entity": "workspace", "createdAtUtc": now})
     seed_workspace_defaults(WORKSPACE_SLUG, WORKSPACE_ID, USER_ID, "Acme Coaching", now)
 
 
@@ -333,21 +350,56 @@ def replace_unavailability(user_id, data):
     return get_unavailability(user_id)
 
 
+def get_workspace(workspace_slug):
+    if workspace_slug == WORKSPACE_SLUG:
+        workspace = table.get_item(Key={"pk": workspace_pk(workspace_slug), "sk": "META"}).get("Item")
+        return workspace or {"name": "Acme Coaching", "theme": DEFAULT_THEME}
+    workspace = table.get_item(Key={"pk": workspace_pk(workspace_slug), "sk": "META"}).get("Item")
+    if not workspace:
+        raise ValueError("Workspace not found.")
+    return workspace
+
+
+def get_theme(workspace_slug):
+    workspace = get_workspace(workspace_slug)
+    return {**DEFAULT_THEME, **(workspace.get("theme") or {})}
+
+
+def clean_theme(data):
+    allowed_fonts = {"Inter", "Plus Jakarta Sans", "Poppins", "DM Sans"}
+    theme = {**DEFAULT_THEME, **{k: data.get(k, DEFAULT_THEME[k]) for k in DEFAULT_THEME}}
+    for key in ["primary", "secondary", "accent", "danger", "background", "surface", "text", "muted"]:
+        value = str(theme[key])
+        if not value.startswith("#") or len(value) not in [4, 7]:
+            raise ValueError(f"{key} must be a hex color.")
+        theme[key] = value
+    if theme["displayFont"] not in allowed_fonts:
+        raise ValueError("Display font is not supported.")
+    if theme["bodyFont"] not in allowed_fonts:
+        raise ValueError("Body font is not supported.")
+    theme["preset"] = str(theme.get("preset") or "custom")[:30]
+    return theme
+
+
+def update_theme(workspace_slug, data):
+    theme = clean_theme(data)
+    workspace = get_workspace(workspace_slug)
+    workspace["theme"] = theme
+    workspace["updatedAtUtc"] = datetime.utcnow().isoformat() + "Z"
+    table.put_item(Item=workspace)
+    return theme
+
+
 def handle_public(method, path, query, body):
     parts = path.strip("/").split("/")
     if len(parts) < 4:
         return response(404, {"error": "Not found"})
     workspace_slug, appointment_slug = parts[3], parts[4] if len(parts) > 4 else ""
-    if workspace_slug != WORKSPACE_SLUG:
-        workspace = table.get_item(Key={"pk": workspace_pk(workspace_slug), "sk": "META"}).get("Item")
-        if not workspace:
-            return response(404, {"error": "Workspace not found"})
-    else:
-        workspace = {"name": "Acme Coaching"}
+    workspace = get_workspace(workspace_slug)
     appt = get_appointment(workspace_slug, appointment_slug)
 
     if len(parts) == 5 and method == "GET":
-        return response(200, {"workspaceName": workspace.get("name", "Workspace"), "appointmentTypeName": appt["name"], "description": appt.get("description"), "durationMinutes": appt["durationMinutes"], "locationType": appt.get("locationType"), "locationValue": appt.get("locationValue"), "timezone": appt.get("timezone", TZ), "serviceIntervalMinutes": int(appt.get("serviceIntervalMinutes", 15))})
+        return response(200, {"workspaceName": workspace.get("name", "Workspace"), "appointmentTypeName": appt["name"], "description": appt.get("description"), "durationMinutes": appt["durationMinutes"], "locationType": appt.get("locationType"), "locationValue": appt.get("locationValue"), "timezone": appt.get("timezone", TZ), "serviceIntervalMinutes": int(appt.get("serviceIntervalMinutes", 15)), "theme": get_theme(workspace_slug)})
     if len(parts) == 6 and parts[5] == "slots" and method == "GET":
         return response(200, {"timezone": query.get("timezone", TZ), "slots": generate_slots(appt, query["from"], query["to"], query.get("timezone", TZ))})
     if len(parts) == 5 and method == "POST":

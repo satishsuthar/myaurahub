@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Calendar, Check, Clock, Copy, ExternalLink, Lock, LogOut, MapPin, Plus, Save, Settings, Trash2, Users } from "lucide-react";
 import "./index.css";
-import { api, apiBase, AppointmentType, AvailabilityRule, AuthResponse, AuthUser, Booking, Slot, UnavailabilityDate, clearAuth, getAuthUser, saveAuth, userId } from "./api";
+import { api, apiBase, AppointmentType, AvailabilityRule, AuthResponse, AuthUser, Booking, Slot, ThemeConfig, UnavailabilityDate, clearAuth, getAuthUser, saveAuth, userId } from "./api";
 
 const defaultAppointment: Omit<AppointmentType, "id" | "isActive"> = {
   assignedUserId: userId,
@@ -22,6 +22,15 @@ const defaultAppointment: Omit<AppointmentType, "id" | "isActive"> = {
 
 const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+const themePresets: ThemeConfig[] = [
+  { preset: "bright", primary: "#2563eb", secondary: "#34a853", accent: "#fbbc05", danger: "#ea4335", background: "#f6f7fb", surface: "#ffffff", text: "#16202a", muted: "#64748b", displayFont: "Plus Jakarta Sans", bodyFont: "Inter" },
+  { preset: "clinic", primary: "#0f766e", secondary: "#38bdf8", accent: "#f59e0b", danger: "#dc2626", background: "#f4fbfa", surface: "#ffffff", text: "#102a2a", muted: "#5b7080", displayFont: "Plus Jakarta Sans", bodyFont: "Inter" },
+  { preset: "creator", primary: "#7c3aed", secondary: "#ec4899", accent: "#f97316", danger: "#ef4444", background: "#fbf7ff", surface: "#ffffff", text: "#211633", muted: "#6b5d7a", displayFont: "Plus Jakarta Sans", bodyFont: "Inter" },
+  { preset: "studio", primary: "#111827", secondary: "#06b6d4", accent: "#84cc16", danger: "#ef4444", background: "#f8fafc", surface: "#ffffff", text: "#111827", muted: "#64748b", displayFont: "Inter", bodyFont: "Inter" }
+];
+
+const defaultTheme = themePresets[0];
+
 function Router() {
   return window.location.pathname.startsWith("/book/") ? <PublicBookingPage /> : <AdminApp />;
 }
@@ -39,22 +48,26 @@ function AdminApp() {
   const [messageTone, setMessageTone] = useState<"success" | "error">("success");
   const [savingAppointment, setSavingAppointment] = useState(false);
   const [savingAvailability, setSavingAvailability] = useState(false);
+  const [theme, setTheme] = useState<ThemeConfig>(defaultTheme);
+  const [savingTheme, setSavingTheme] = useState(false);
 
   if (!authUser) {
     return <AuthPage onAuthenticated={setAuthUser} />;
   }
 
   async function load() {
-    const [appointmentData, bookingData, availabilityData, unavailableData] = await Promise.all([
+    const [appointmentData, bookingData, availabilityData, unavailableData, themeData] = await Promise.all([
       api<AppointmentType[]>("/api/calendar/appointment-types"),
       api<Booking[]>("/api/calendar/bookings"),
       api<AvailabilityRule[]>("/api/calendar/availability/me"),
-      api<UnavailabilityDate[]>("/api/calendar/unavailability")
+      api<UnavailabilityDate[]>("/api/calendar/unavailability"),
+      api<ThemeConfig>("/api/workspace/theme")
     ]);
     setAppointments(appointmentData);
     setBookings(bookingData);
     setRules(availabilityData.map((rule) => ({ ...rule, startTime: rule.startTime.slice(0, 5), endTime: rule.endTime.slice(0, 5) })));
     setUnavailability(unavailableData);
+    setTheme(themeData);
   }
 
   useEffect(() => {
@@ -128,6 +141,25 @@ function AdminApp() {
     await load();
   }
 
+  async function saveTheme() {
+    setSavingTheme(true);
+    setMessage("");
+    try {
+      const saved = await api<ThemeConfig>("/api/workspace/theme", {
+        method: "PUT",
+        body: JSON.stringify(theme)
+      });
+      setTheme(saved);
+      setMessageTone("success");
+      setMessage("Theme saved. Public booking pages will use these brand settings.");
+    } catch (error) {
+      setMessageTone("error");
+      setMessage(error instanceof Error ? error.message : "Could not save theme.");
+    } finally {
+      setSavingTheme(false);
+    }
+  }
+
   function editAppointment(item: AppointmentType) {
     setEditingId(item.id);
     setForm({
@@ -153,7 +185,7 @@ function AdminApp() {
   }
 
   return (
-    <main className="min-h-screen bg-[linear-gradient(180deg,#f7f9fd_0%,#f4f7ff_42%,#f7fbf8_100%)] text-[#16202a]">
+    <main className="min-h-screen bg-[linear-gradient(180deg,var(--theme-background)_0%,#f4f7ff_42%,#f7fbf8_100%)] text-[var(--theme-text)]" style={themeStyle(theme)}>
       <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-[#dde3ec] bg-[#fbfcff] px-4 py-5 lg:block">
         <div className="mb-7 overflow-hidden rounded-md border border-[#e5e9f2] bg-white shadow-sm">
           <ColorRail />
@@ -185,7 +217,7 @@ function AdminApp() {
               <h1 className="display-font text-xl font-bold">Calendar Booking</h1>
               <p className="text-xs font-medium text-[#64748b]">Appointment types, availability, buffers, notices, and bookings.</p>
             </div>
-            <a className="inline-flex items-center gap-2 rounded-md bg-[#2563eb] px-4 py-2 text-sm font-bold text-white shadow-sm shadow-blue-200" href={`/book/${authUser.workspaceSlug}/${appointments[0]?.slug ?? "discovery-call"}`}>
+            <a className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white shadow-sm shadow-blue-200" href={`/book/${authUser.workspaceSlug}/${appointments[0]?.slug ?? "discovery-call"}`}>
               <ExternalLink size={16} /> Open booking page
             </a>
           </div>
@@ -314,7 +346,7 @@ function AdminApp() {
             </Panel>
           </section>}
 
-          {activeTab === "settings" && <section className="max-w-3xl">
+          {activeTab === "settings" && <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
             <Panel title="Settings" icon={<Settings size={18} />}>
               <div className="space-y-2 text-sm text-stone-600">
                 <p>Workspace: {authUser.workspaceName}</p>
@@ -322,6 +354,40 @@ function AdminApp() {
                 <p>Calendar mode: Personal calendar</p>
                 <p>Public booking URL: <a className="text-moss underline" href={`/book/${authUser.workspaceSlug}/${appointments[0]?.slug ?? "discovery-call"}`}>/book/{authUser.workspaceSlug}/{appointments[0]?.slug ?? "discovery-call"}</a></p>
               </div>
+            </Panel>
+            <Panel title="Brand Theme" icon={<Settings size={18} />}>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {themePresets.map((preset) => (
+                  <button key={preset.preset} type="button" className={`rounded-md border p-3 text-left text-sm ${theme.preset === preset.preset ? "border-[var(--theme-primary)] bg-[#f5f9ff]" : "border-[#dde3ec] bg-white hover:bg-[#fbfcff]"}`} onClick={() => setTheme(preset)}>
+                    <div className="mb-2 font-bold capitalize">{preset.preset}</div>
+                    <ThemeSwatches theme={preset} />
+                  </button>
+                ))}
+              </div>
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <ColorField label="Primary" value={theme.primary} onChange={(value) => setTheme({ ...theme, preset: "custom", primary: value })} />
+                <ColorField label="Secondary" value={theme.secondary} onChange={(value) => setTheme({ ...theme, preset: "custom", secondary: value })} />
+                <ColorField label="Accent" value={theme.accent} onChange={(value) => setTheme({ ...theme, preset: "custom", accent: value })} />
+                <ColorField label="Danger" value={theme.danger} onChange={(value) => setTheme({ ...theme, preset: "custom", danger: value })} />
+                <ColorField label="Background" value={theme.background} onChange={(value) => setTheme({ ...theme, preset: "custom", background: value })} />
+                <ColorField label="Surface" value={theme.surface} onChange={(value) => setTheme({ ...theme, preset: "custom", surface: value })} />
+                <ColorField label="Text" value={theme.text} onChange={(value) => setTheme({ ...theme, preset: "custom", text: value })} />
+                <ColorField label="Muted text" value={theme.muted} onChange={(value) => setTheme({ ...theme, preset: "custom", muted: value })} />
+                <SelectField label="Display font" value={theme.displayFont} options={["Plus Jakarta Sans", "Inter", "Poppins", "DM Sans"]} onChange={(value) => setTheme({ ...theme, preset: "custom", displayFont: value })} />
+                <SelectField label="Body font" value={theme.bodyFont} options={["Inter", "Plus Jakarta Sans", "Poppins", "DM Sans"]} onChange={(value) => setTheme({ ...theme, preset: "custom", bodyFont: value })} />
+              </div>
+              <div className="mt-5 rounded-md border border-[#dde3ec] bg-[var(--theme-surface)] p-4" style={themeStyle(theme)}>
+                <div className="display-font text-lg font-bold text-[var(--theme-text)]">Live preview</div>
+                <p className="mt-1 text-sm text-[var(--theme-muted)]">This branding will appear on admin and customer booking pages.</p>
+                <div className="mt-3 flex gap-2">
+                  <span className="rounded-md bg-[var(--theme-primary)] px-3 py-2 text-xs font-bold text-white">Primary</span>
+                  <span className="rounded-md bg-[var(--theme-secondary)] px-3 py-2 text-xs font-bold text-white">Secondary</span>
+                  <span className="rounded-md bg-[var(--theme-accent)] px-3 py-2 text-xs font-bold text-[#16202a]">Accent</span>
+                </div>
+              </div>
+              <button type="button" disabled={savingTheme} className="mt-5 inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white disabled:opacity-60" onClick={saveTheme}>
+                <Save size={16} /> {savingTheme ? "Saving..." : "Save theme"}
+              </button>
             </Panel>
           </section>}
         </div>
@@ -453,7 +519,7 @@ function PublicBookingPage() {
 
   if (confirmed && selectedSlot && metadata) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[linear-gradient(135deg,#f7f9fd,#f4f8ff_45%,#f7fbf8)] px-4 py-10 text-[#16202a]">
+      <main className="flex min-h-screen items-center justify-center bg-[linear-gradient(135deg,var(--theme-background),#f4f8ff_45%,#f7fbf8)] px-4 py-10 text-[var(--theme-text)]" style={themeStyle(metadata.theme)}>
         <section className="w-full max-w-xl overflow-hidden rounded-lg border border-[#dde3ec] bg-white text-center shadow-[0_8px_28px_rgba(15,23,42,0.08)]">
           <ColorRail />
           <div className="p-8">
@@ -465,7 +531,7 @@ function PublicBookingPage() {
           <div className="mt-6 rounded-md border border-[#dadada] bg-[#fafafa] p-4 text-sm">
             {new Date(selectedSlot.displayStart).toLocaleString([], { dateStyle: "full", timeStyle: "short" })}
           </div>
-          <a className="mt-6 inline-flex rounded-md border border-[#006bff] px-4 py-2 text-sm font-semibold text-[#006bff]" href={`/book/${workspaceSlug}/${appointmentSlug}`}>
+          <a className="mt-6 inline-flex rounded-md border border-[var(--theme-primary)] px-4 py-2 text-sm font-semibold text-[var(--theme-primary)]" href={`/book/${workspaceSlug}/${appointmentSlug}`}>
             Book another time
           </a>
           </div>
@@ -475,18 +541,18 @@ function PublicBookingPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[linear-gradient(135deg,#f7f9fd,#f4f8ff_45%,#f7fbf8)] px-4 py-5 text-[#16202a] md:py-8">
+    <main className="min-h-screen bg-[linear-gradient(135deg,var(--theme-background),#f4f8ff_45%,#f7fbf8)] px-4 py-5 text-[var(--theme-text)] md:py-8" style={themeStyle(metadata?.theme)}>
       <section className="mx-auto grid max-w-6xl overflow-hidden rounded-lg border border-[#dde3ec] bg-white shadow-[0_8px_28px_rgba(15,23,42,0.08)] lg:grid-cols-[300px_1fr_280px]">
         <aside className="border-b border-[#e4e4e4] bg-[linear-gradient(180deg,#ffffff,#f7fbff)] p-6 lg:border-b-0 lg:border-r">
           <div className="mb-6 flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-md bg-[#2563eb] text-sm font-bold text-white">
+            <div className="flex h-11 w-11 items-center justify-center rounded-md bg-[var(--theme-primary)] text-sm font-bold text-white">
               {(metadata?.workspaceName ?? "A").slice(0, 1)}
             </div>
             <div className="flex gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#4285f4]" />
-              <span className="h-2.5 w-2.5 rounded-full bg-[#34a853]" />
-              <span className="h-2.5 w-2.5 rounded-full bg-[#fbbc05]" />
-              <span className="h-2.5 w-2.5 rounded-full bg-[#ea4335]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[var(--theme-primary)]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[var(--theme-secondary)]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[var(--theme-accent)]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[var(--theme-danger)]" />
             </div>
           </div>
           <div className="mb-2 text-sm font-semibold text-[#6f6f6f]">{metadata?.workspaceName ?? "Loading"}</div>
@@ -503,13 +569,13 @@ function PublicBookingPage() {
           <ColorRail />
           <h2 className="display-font mb-5 text-xl font-bold">Select a Date & Time</h2>
           <div className="mb-5 flex items-center justify-between">
-            <button className="flex h-9 w-9 items-center justify-center rounded-full text-xl text-[#006bff] hover:bg-[#eef5ff]" onClick={() => { setVisibleMonth(addMonths(visibleMonth, -1)); setSelectedSlot(null); }}>
+            <button className="flex h-9 w-9 items-center justify-center rounded-full text-xl text-[var(--theme-primary)] hover:bg-[#eef5ff]" onClick={() => { setVisibleMonth(addMonths(visibleMonth, -1)); setSelectedSlot(null); }}>
               {"<"}
             </button>
             <div className="text-base font-bold">
               {visibleMonth.toLocaleDateString([], { month: "long", year: "numeric" })}
             </div>
-            <button className="flex h-9 w-9 items-center justify-center rounded-full text-xl text-[#006bff] hover:bg-[#eef5ff]" onClick={() => { setVisibleMonth(addMonths(visibleMonth, 1)); setSelectedSlot(null); }}>
+            <button className="flex h-9 w-9 items-center justify-center rounded-full text-xl text-[var(--theme-primary)] hover:bg-[#eef5ff]" onClick={() => { setVisibleMonth(addMonths(visibleMonth, 1)); setSelectedSlot(null); }}>
               {">"}
             </button>
           </div>
@@ -531,8 +597,8 @@ function PublicBookingPage() {
                   className={[
                     "mx-auto flex h-11 w-11 items-center justify-center rounded-full text-sm font-bold transition",
                     !date ? "invisible" : "",
-                    hasSlots && !isSelected ? "border border-[#d8e6ff] bg-[#f8fbff] text-[#006bff] hover:bg-[#eef5ff]" : "",
-                    isSelected ? "bg-[#006bff] text-white shadow-sm shadow-blue-200" : "",
+                    hasSlots && !isSelected ? "border border-[#d8e6ff] bg-[#f8fbff] text-[var(--theme-primary)] hover:bg-[#eef5ff]" : "",
+                    isSelected ? "bg-[var(--theme-primary)] text-white shadow-sm shadow-blue-200" : "",
                     !hasSlots || isPast ? "cursor-not-allowed text-[#b9b9b9]" : ""
                   ].join(" ")}
                   onClick={() => {
@@ -567,7 +633,7 @@ function PublicBookingPage() {
                 {selectedDaySlots.map((slot) => (
                   <button
                     key={slot.startUtc}
-                    className="w-full rounded-md border border-[#006bff] bg-white px-4 py-3 text-center text-sm font-bold text-[#006bff] shadow-sm shadow-blue-50 hover:border-[#0051c7] hover:bg-[#f4f9ff]"
+                    className="w-full rounded-md border border-[var(--theme-primary)] bg-white px-4 py-3 text-center text-sm font-bold text-[var(--theme-primary)] shadow-sm shadow-blue-50 hover:bg-[#f4f9ff]"
                     onClick={() => setSelectedSlot(slot)}
                   >
                     {new Date(slot.displayStart).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
@@ -579,7 +645,7 @@ function PublicBookingPage() {
 
           {selectedSlot && (
             <>
-              <button className="mb-4 text-sm font-bold text-[#006bff]" onClick={() => setSelectedSlot(null)}>Back to times</button>
+              <button className="mb-4 text-sm font-bold text-[var(--theme-primary)]" onClick={() => setSelectedSlot(null)}>Back to times</button>
               <h3 className="text-base font-bold">Enter Details</h3>
               <div className="mt-3 rounded-md bg-[#f7f7f5] p-3 text-sm text-[#555]">
                 {new Date(selectedSlot.displayStart).toLocaleString([], { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })}
@@ -592,7 +658,7 @@ function PublicBookingPage() {
               </div>
               {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
               <button
-                className="mt-5 w-full rounded-md bg-[#006bff] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-[#c9c9c9]"
+                className="mt-5 w-full rounded-md bg-[var(--theme-primary)] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-[#c9c9c9]"
                 disabled={!customer.firstName || !customer.email}
                 onClick={confirmBooking}
               >
@@ -615,6 +681,7 @@ type PublicMetadata = {
   locationType: string | number;
   locationValue?: string;
   timezone: string;
+  theme: ThemeConfig;
 };
 
 function toDateKey(date: Date) {
@@ -660,12 +727,61 @@ function Panel({ title, icon, children }: { title: string; icon: React.ReactNode
 function ColorRail() {
   return (
     <div className="grid h-1.5 grid-cols-4">
-      <span className="bg-[#4285f4]" />
-      <span className="bg-[#34a853]" />
-      <span className="bg-[#fbbc05]" />
-      <span className="bg-[#ea4335]" />
+      <span className="bg-[var(--theme-primary)]" />
+      <span className="bg-[var(--theme-secondary)]" />
+      <span className="bg-[var(--theme-accent)]" />
+      <span className="bg-[var(--theme-danger)]" />
     </div>
   );
+}
+
+function ThemeSwatches({ theme }: { theme: ThemeConfig }) {
+  return (
+    <div className="flex gap-1.5">
+      {[theme.primary, theme.secondary, theme.accent, theme.danger].map((color) => (
+        <span key={color} className="h-5 w-8 rounded" style={{ backgroundColor: color }} />
+      ))}
+    </div>
+  );
+}
+
+function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 block font-semibold text-[#475569]">{label}</span>
+      <div className="flex overflow-hidden rounded-md border border-[#cbd5e1] bg-white">
+        <input className="h-10 w-12 border-0 p-1" type="color" value={value} onChange={(event) => onChange(event.target.value)} />
+        <input className="min-w-0 flex-1 border-0 px-2 text-sm outline-none" value={value} onChange={(event) => onChange(event.target.value)} />
+      </div>
+    </label>
+  );
+}
+
+function SelectField({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 block font-semibold text-[#475569]">{label}</span>
+      <select className="w-full rounded-md border border-[#cbd5e1] bg-white p-2 outline-none focus:border-[var(--theme-primary)] focus:ring-2 focus:ring-blue-100" value={value} onChange={(event) => onChange(event.target.value)}>
+        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function themeStyle(theme: ThemeConfig = defaultTheme): React.CSSProperties {
+  return {
+    "--theme-primary": theme.primary,
+    "--theme-secondary": theme.secondary,
+    "--theme-accent": theme.accent,
+    "--theme-danger": theme.danger,
+    "--theme-background": theme.background,
+    "--theme-surface": theme.surface,
+    "--theme-text": theme.text,
+    "--theme-muted": theme.muted,
+    "--display-font": `"${theme.displayFont}", Inter, ui-sans-serif, system-ui, sans-serif`,
+    "--body-font": `"${theme.bodyFont}", Inter, ui-sans-serif, system-ui, sans-serif`,
+    fontFamily: `"${theme.bodyFont}", Inter, ui-sans-serif, system-ui, sans-serif`
+  } as React.CSSProperties;
 }
 
 function Field({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
