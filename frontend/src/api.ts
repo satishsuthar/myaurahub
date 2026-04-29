@@ -132,6 +132,28 @@ export type Opportunity = {
   updatedAtUtc?: string;
 };
 
+export type AutomationTrigger = {
+  type: string;
+  filters?: Record<string, string>;
+};
+
+export type AutomationAction = {
+  id: string;
+  type: string;
+  config: Record<string, string>;
+};
+
+export type AutomationRule = {
+  id: string;
+  name: string;
+  description?: string;
+  trigger: AutomationTrigger;
+  actions: AutomationAction[];
+  isActive: boolean;
+  createdAtUtc?: string;
+  updatedAtUtc?: string;
+};
+
 export type UnavailabilityDate = {
   date: string;
   reason?: string;

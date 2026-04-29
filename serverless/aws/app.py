@@ -120,6 +120,16 @@ def handler(event, _context):
         if path.startswith("/api/opportunities/") and method == "PUT":
             opportunity_id = path.split("/")[3]
             return response(200, update_opportunity(context, opportunity_id, body))
+        if path == "/api/automations" and method == "GET":
+            return response(200, list_automations(context["workspaceSlug"]))
+        if path == "/api/automations" and method == "POST":
+            return response(201, create_automation(context, body))
+        if path.startswith("/api/automations/") and method == "PUT":
+            automation_id = path.split("/")[3]
+            return response(200, update_automation(context, automation_id, body))
+        if path.startswith("/api/automations/") and method == "DELETE":
+            automation_id = path.split("/")[3]
+            return response(200, delete_automation(context, automation_id))
         if path.startswith("/api/contacts/"):
             parts = path.strip("/").split("/")
             contact_id = parts[2] if len(parts) > 2 else ""
@@ -746,6 +756,97 @@ def update_opportunity(context, opportunity_id, data):
     if updated.get("contactId") and current.get("stageId") != updated.get("stageId"):
         add_contact_activity(context["workspaceSlug"], updated["contactId"], "OpportunityMoved", "Opportunity moved", updated["title"], {"opportunityId": opportunity_id, "stageId": updated["stageId"]})
     return opportunity_shape(updated)
+
+
+VALID_AUTOMATION_TRIGGERS = {
+    "AppointmentBooked",
+    "BookingCancelled",
+    "ContactCreated",
+    "ContactUpdated",
+    "PageVisited",
+    "OpportunityCreated",
+    "OpportunityMoved",
+    "TaskCompleted",
+}
+
+VALID_AUTOMATION_ACTIONS = {
+    "CreateTask",
+    "AddContactTag",
+    "RemoveContactTag",
+    "SendEmail",
+    "InternalNotification",
+    "Webhook",
+}
+
+
+def automation_shape(item):
+    return {k: item.get(k) for k in ["id", "name", "description", "trigger", "actions", "isActive", "createdAtUtc", "updatedAtUtc"]}
+
+
+def list_automations(workspace_slug):
+    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("AUTOMATION#"))
+    return sorted([automation_shape(item) for item in result.get("Items", [])], key=lambda item: item.get("createdAtUtc", ""), reverse=True)
+
+
+def find_automation(workspace_slug, automation_id):
+    return table.get_item(Key={"pk": workspace_pk(workspace_slug), "sk": f"AUTOMATION#{automation_id}"}).get("Item")
+
+
+def clean_automation(data, current=None):
+    name = str(data.get("name", current.get("name", "") if current else "")).strip()
+    if not name:
+        raise ValueError("Automation name is required.")
+    trigger = data.get("trigger", current.get("trigger", {}) if current else {}) or {}
+    trigger_type = str(trigger.get("type", "")).strip()
+    if trigger_type not in VALID_AUTOMATION_TRIGGERS:
+        raise ValueError("Automation trigger is not supported.")
+    filters = trigger.get("filters", {}) if isinstance(trigger.get("filters", {}), dict) else {}
+    clean_filters = {str(k).strip()[:80]: str(v).strip()[:200] for k, v in filters.items() if str(k).strip()}
+    actions = []
+    for index, action in enumerate(data.get("actions", current.get("actions", []) if current else []) or []):
+        action_type = str(action.get("type", "")).strip()
+        if action_type not in VALID_AUTOMATION_ACTIONS:
+            raise ValueError("Automation action is not supported.")
+        config = action.get("config", {}) if isinstance(action.get("config", {}), dict) else {}
+        actions.append({
+            "id": str(action.get("id") or f"action-{index + 1}")[:80],
+            "type": action_type,
+            "config": {str(k).strip()[:80]: str(v).strip()[:1000] for k, v in config.items() if str(k).strip()},
+        })
+    if not actions:
+        raise ValueError("At least one automation action is required.")
+    return {
+        "name": name[:140],
+        "description": str(data.get("description", current.get("description", "") if current else "") or "").strip()[:1000],
+        "trigger": {"type": trigger_type, "filters": clean_filters},
+        "actions": actions[:10],
+        "isActive": bool(data.get("isActive", current.get("isActive", True) if current else True)),
+    }
+
+
+def create_automation(context, data):
+    automation_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat() + "Z"
+    item = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"AUTOMATION#{automation_id}", "entity": "automation", "id": automation_id, **clean_automation(data), "createdAtUtc": now}
+    table.put_item(Item=item)
+    return automation_shape(item)
+
+
+def update_automation(context, automation_id, data):
+    current = find_automation(context["workspaceSlug"], automation_id)
+    if not current:
+        raise ValueError("Automation not found.")
+    updated = {**current, **clean_automation(data, current), "updatedAtUtc": datetime.utcnow().isoformat() + "Z"}
+    table.put_item(Item=updated)
+    return automation_shape(updated)
+
+
+def delete_automation(context, automation_id):
+    current = find_automation(context["workspaceSlug"], automation_id)
+    if not current:
+        raise ValueError("Automation not found.")
+    table.delete_item(Key={"pk": workspace_pk(context["workspaceSlug"]), "sk": f"AUTOMATION#{automation_id}"})
+    return {"deleted": True, "id": automation_id}
 
 
 def get_workspace(workspace_slug):

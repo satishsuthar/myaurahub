@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Calendar, Check, Clock, Copy, ExternalLink, Lock, LogOut, MapPin, Plus, Save, Settings, Trash2, Users } from "lucide-react";
+import { Calendar, Check, Clock, Copy, ExternalLink, Lock, LogOut, MapPin, Plus, Save, Settings, Trash2, Users, Workflow } from "lucide-react";
 import "./index.css";
-import { api, apiBase, AppointmentType, AvailabilityRule, AuthResponse, AuthUser, Booking, Contact, ContactActivity, ContactCustomField, ContactTask, Opportunity, Pipeline, Slot, ThemeConfig, UnavailabilityDate, clearAuth, getAuthUser, saveAuth, userId } from "./api";
+import { api, apiBase, AppointmentType, AutomationAction, AutomationRule, AvailabilityRule, AuthResponse, AuthUser, Booking, Contact, ContactActivity, ContactCustomField, ContactTask, Opportunity, Pipeline, Slot, ThemeConfig, UnavailabilityDate, clearAuth, getAuthUser, saveAuth, userId } from "./api";
 
 const defaultAppointment: Omit<AppointmentType, "id" | "isActive"> = {
   assignedUserId: userId,
@@ -66,6 +66,25 @@ const emptyContact: Omit<Contact, "id"> = {
 const emptyTask = { title: "", description: "", dueDate: "" };
 const emptyPipeline = { name: "", description: "", stagesText: "New Lead\nQualified\nProposal\nWon" };
 const emptyOpportunity = { title: "", value: 0, currency: "AUD", contactId: "", expectedCloseDate: "", source: "", notes: "" };
+const automationTriggerOptions = [
+  { value: "AppointmentBooked", label: "Appointment booked" },
+  { value: "BookingCancelled", label: "Booking cancelled" },
+  { value: "ContactCreated", label: "Contact created" },
+  { value: "ContactUpdated", label: "Contact updated" },
+  { value: "PageVisited", label: "Booking page visited" },
+  { value: "OpportunityCreated", label: "Opportunity created" },
+  { value: "OpportunityMoved", label: "Opportunity moved" },
+  { value: "TaskCompleted", label: "Task completed" }
+];
+const automationActionOptions = [
+  { value: "CreateTask", label: "Create task" },
+  { value: "AddContactTag", label: "Add contact tag" },
+  { value: "RemoveContactTag", label: "Remove contact tag" },
+  { value: "SendEmail", label: "Send email" },
+  { value: "InternalNotification", label: "Internal notification" },
+  { value: "Webhook", label: "Webhook" }
+];
+const emptyAutomation = { name: "", description: "", triggerType: "AppointmentBooked", filterKey: "", filterValue: "", actions: [{ id: "action-1", type: "CreateTask", configText: "title=Follow up with contact\ndueInDays=1" }], isActive: true };
 const customFieldTypes = [
   { group: "Text input", options: [["text", "Single line"], ["multiline", "Multiline"], ["textList", "Text box list"]] },
   { group: "Values", options: [["number", "Number"], ["phone", "Phone"], ["currency", "Currency"]] },
@@ -84,12 +103,15 @@ function AdminApp() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [automations, setAutomations] = useState<AutomationRule[]>([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>("");
   const [pipelineForm, setPipelineForm] = useState(emptyPipeline);
   const [opportunityForm, setOpportunityForm] = useState(emptyOpportunity);
   const [pipelineModalOpen, setPipelineModalOpen] = useState(false);
   const [editingPipelineId, setEditingPipelineId] = useState<string | null>(null);
   const [opportunityModalStageId, setOpportunityModalStageId] = useState<string | null>(null);
+  const [automationForm, setAutomationForm] = useState(emptyAutomation);
+  const [editingAutomationId, setEditingAutomationId] = useState<string | null>(null);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [contactForm, setContactForm] = useState<Omit<Contact, "id">>(emptyContact);
   const [contactTasks, setContactTasks] = useState<ContactTask[]>([]);
@@ -100,7 +122,7 @@ function AdminApp() {
   const [unavailability, setUnavailability] = useState<UnavailabilityDate[]>([]);
   const [form, setForm] = useState(defaultAppointment);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"calendars" | "availability" | "bookings" | "schedulingSettings" | "contacts" | "opportunities" | "settings" | "profile">("calendars");
+  const [activeTab, setActiveTab] = useState<"calendars" | "availability" | "bookings" | "schedulingSettings" | "contacts" | "opportunities" | "automations" | "settings" | "profile">("calendars");
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"success" | "error">("success");
   const [savingAppointment, setSavingAppointment] = useState(false);
@@ -116,12 +138,13 @@ function AdminApp() {
   }
 
   async function load() {
-    const [appointmentData, bookingData, contactData, pipelineData, opportunityData, availabilityData, unavailableData, themeData] = await Promise.all([
+    const [appointmentData, bookingData, contactData, pipelineData, opportunityData, automationData, availabilityData, unavailableData, themeData] = await Promise.all([
       api<AppointmentType[]>("/api/calendar/appointment-types"),
       api<Booking[]>("/api/calendar/bookings"),
       api<Contact[]>("/api/contacts"),
       api<Pipeline[]>("/api/opportunities/pipelines"),
       api<Opportunity[]>("/api/opportunities"),
+      api<AutomationRule[]>("/api/automations"),
       api<AvailabilityRule[]>("/api/calendar/availability/me"),
       api<UnavailabilityDate[]>("/api/calendar/unavailability"),
       api<ThemeConfig>("/api/workspace/theme")
@@ -131,6 +154,7 @@ function AdminApp() {
     setContacts(contactData);
     setPipelines(pipelineData);
     setOpportunities(opportunityData);
+    setAutomations(automationData);
     setSelectedPipelineId((current) => current || pipelineData[0]?.id || "");
     setRules(availabilityData.map((rule) => ({ ...rule, startTime: rule.startTime.slice(0, 5), endTime: rule.endTime.slice(0, 5) })));
     setUnavailability(unavailableData);
@@ -416,6 +440,91 @@ function AdminApp() {
     setOpportunities(opportunities.map((item) => item.id === opportunity.id ? updated : item));
   }
 
+  function parseActionConfig(configText: string) {
+    return Object.fromEntries(configText.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
+      const [key, ...valueParts] = line.split("=");
+      return [key.trim(), valueParts.join("=").trim()];
+    }).filter(([key]) => key));
+  }
+
+  function serializeActionConfig(config: Record<string, string>) {
+    return Object.entries(config ?? {}).map(([key, value]) => `${key}=${value}`).join("\n");
+  }
+
+  function addAutomationAction() {
+    setAutomationForm({
+      ...automationForm,
+      actions: [...automationForm.actions, { id: `action-${Date.now()}`, type: "InternalNotification", configText: "message=New automation event" }]
+    });
+  }
+
+  function updateAutomationAction(id: string, patch: Partial<(typeof automationForm.actions)[number]>) {
+    setAutomationForm({ ...automationForm, actions: automationForm.actions.map((action) => action.id === id ? { ...action, ...patch } : action) });
+  }
+
+  function editAutomation(rule: AutomationRule) {
+    const filterEntries = Object.entries(rule.trigger.filters ?? {});
+    setEditingAutomationId(rule.id);
+    setAutomationForm({
+      name: rule.name,
+      description: rule.description ?? "",
+      triggerType: rule.trigger.type,
+      filterKey: filterEntries[0]?.[0] ?? "",
+      filterValue: filterEntries[0]?.[1] ?? "",
+      actions: rule.actions.map((action) => ({ id: action.id, type: action.type, configText: serializeActionConfig(action.config) })),
+      isActive: rule.isActive
+    });
+    setActiveTab("automations");
+  }
+
+  async function saveAutomation() {
+    if (!automationForm.name.trim() || automationForm.actions.length === 0) {
+      setMessageTone("error");
+      setMessage("Automation name and at least one action are required.");
+      return;
+    }
+    const actions: AutomationAction[] = automationForm.actions.map((action, index) => ({
+      id: action.id || `action-${index + 1}`,
+      type: action.type,
+      config: parseActionConfig(action.configText)
+    }));
+    const filters = automationForm.filterKey.trim() ? { [automationForm.filterKey.trim()]: automationForm.filterValue.trim() } : {};
+    try {
+      const saved = await api<AutomationRule>(editingAutomationId ? `/api/automations/${editingAutomationId}` : "/api/automations", {
+        method: editingAutomationId ? "PUT" : "POST",
+        body: JSON.stringify({ name: automationForm.name, description: automationForm.description, trigger: { type: automationForm.triggerType, filters }, actions, isActive: automationForm.isActive })
+      });
+      setAutomations(editingAutomationId ? automations.map((item) => item.id === saved.id ? saved : item) : [saved, ...automations]);
+      setAutomationForm(emptyAutomation);
+      setEditingAutomationId(null);
+      setMessageTone("success");
+      setMessage(editingAutomationId ? "Automation updated." : "Automation created.");
+    } catch (error) {
+      setMessageTone("error");
+      setMessage(error instanceof Error ? error.message : "Could not save automation.");
+    }
+  }
+
+  async function toggleAutomation(rule: AutomationRule) {
+    const updated = await api<AutomationRule>(`/api/automations/${rule.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ ...rule, isActive: !rule.isActive })
+    });
+    setAutomations(automations.map((item) => item.id === updated.id ? updated : item));
+  }
+
+  async function deleteAutomation(rule: AutomationRule) {
+    if (!window.confirm(`Delete automation "${rule.name}"?`)) return;
+    await api(`/api/automations/${rule.id}`, { method: "DELETE" });
+    setAutomations(automations.filter((item) => item.id !== rule.id));
+    if (editingAutomationId === rule.id) {
+      setEditingAutomationId(null);
+      setAutomationForm(emptyAutomation);
+    }
+    setMessageTone("success");
+    setMessage("Automation deleted.");
+  }
+
   function editAppointment(item: AppointmentType) {
     setEditingId(item.id);
     setForm({
@@ -464,6 +573,7 @@ function AdminApp() {
           <NavItem icon={<Calendar size={17} />} label="Scheduling" active={["calendars", "availability", "bookings", "schedulingSettings"].includes(activeTab)} onClick={() => setActiveTab("calendars")} />
           <NavItem icon={<Users size={17} />} label="Contacts" active={activeTab === "contacts"} onClick={() => setActiveTab("contacts")} />
           <NavItem icon={<Clock size={17} />} label="Opportunities" active={activeTab === "opportunities"} onClick={() => setActiveTab("opportunities")} />
+          <NavItem icon={<Workflow size={17} />} label="Automations" active={activeTab === "automations"} onClick={() => setActiveTab("automations")} />
         </nav>
         <nav className="absolute bottom-5 left-4 right-4 space-y-1 text-sm font-medium">
           <NavItem icon={<Settings size={17} />} label="App Settings" active={activeTab === "settings"} onClick={() => setActiveTab("settings")} />
@@ -477,8 +587,8 @@ function AdminApp() {
           <ColorRail />
           <div className="flex items-center justify-between px-5 py-3 lg:px-6">
             <div>
-              <h1 className="display-font text-xl font-bold">{activeTab === "contacts" ? "Contacts" : activeTab === "opportunities" ? "Opportunities" : activeTab === "settings" ? "App Settings" : activeTab === "profile" ? "My Profile" : "Scheduling"}</h1>
-              <p className="text-xs font-medium text-[#64748b]">{activeTab === "contacts" ? "Contacts, custom fields, tasks, and activity timeline." : activeTab === "opportunities" ? "Pipelines, stages, deals, and revenue tracking." : activeTab === "settings" ? "Workspace-wide branding and application settings." : activeTab === "profile" ? "Your login and workspace access details." : "Appointment types, availability, bookings, and scheduling settings."}</p>
+              <h1 className="display-font text-xl font-bold">{activeTab === "contacts" ? "Contacts" : activeTab === "opportunities" ? "Opportunities" : activeTab === "automations" ? "Automations" : activeTab === "settings" ? "App Settings" : activeTab === "profile" ? "My Profile" : "Scheduling"}</h1>
+              <p className="text-xs font-medium text-[#64748b]">{activeTab === "contacts" ? "Contacts, custom fields, tasks, and activity timeline." : activeTab === "opportunities" ? "Pipelines, stages, deals, and revenue tracking." : activeTab === "automations" ? "Workflow rules that react to bookings, contacts, pages, tasks, and opportunities." : activeTab === "settings" ? "Workspace-wide branding and application settings." : activeTab === "profile" ? "Your login and workspace access details." : "Appointment types, availability, bookings, and scheduling settings."}</p>
             </div>
             <a className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white shadow-sm shadow-blue-200" href={`/book/${authUser.workspaceSlug}/${appointments[0]?.slug ?? "discovery-call"}`}>
               <ExternalLink size={16} /> Open booking page
@@ -889,6 +999,87 @@ function AdminApp() {
                 </div>
               );
             })()}
+          </section>}
+
+          {activeTab === "automations" && <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+            <Panel title={editingAutomationId ? "Edit Automation" : "Create Automation"} icon={<Workflow size={18} />}>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Automation name" value={automationForm.name} onChange={(value) => setAutomationForm({ ...automationForm, name: value })} />
+                <label className="text-sm font-bold text-[#334155]">Status
+                  <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={automationForm.isActive ? "active" : "inactive"} onChange={(event) => setAutomationForm({ ...automationForm, isActive: event.target.value === "active" })}>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </label>
+              </div>
+              <textarea className="mt-4 min-h-20 w-full rounded-md border border-[#cbd5e1] bg-white p-3 text-sm" placeholder="Description" value={automationForm.description} onChange={(event) => setAutomationForm({ ...automationForm, description: event.target.value })} />
+
+              <div className="mt-5 rounded-md border border-[#dde3ec] bg-[#fbfcff] p-4">
+                <div className="mb-3 text-sm font-black text-[#16202a]">When this happens</div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <label className="text-sm font-bold text-[#334155]">Trigger
+                    <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={automationForm.triggerType} onChange={(event) => setAutomationForm({ ...automationForm, triggerType: event.target.value })}>
+                      {automationTriggerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
+                  <Field label="Filter field" value={automationForm.filterKey} onChange={(value) => setAutomationForm({ ...automationForm, filterKey: value })} />
+                  <Field label="Filter value" value={automationForm.filterValue} onChange={(value) => setAutomationForm({ ...automationForm, filterValue: value })} />
+                </div>
+              </div>
+
+              <div className="mt-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-black text-[#16202a]">Actions</div>
+                  <button className="inline-flex items-center gap-2 rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold" onClick={addAutomationAction}><Plus size={15} /> Add action</button>
+                </div>
+                {automationForm.actions.map((action, index) => (
+                  <div key={action.id} className="rounded-md border border-[#dde3ec] bg-white p-3">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <div className="text-sm font-bold">Action {index + 1}</div>
+                      {automationForm.actions.length > 1 && <button className="rounded-md border border-rose-200 p-2 text-rose-700" onClick={() => setAutomationForm({ ...automationForm, actions: automationForm.actions.filter((item) => item.id !== action.id) })}><Trash2 size={15} /></button>}
+                    </div>
+                    <label className="text-sm font-bold text-[#334155]">Action type
+                      <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={action.type} onChange={(event) => updateAutomationAction(action.id, { type: event.target.value })}>
+                        {automationActionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                    <textarea className="mt-3 min-h-20 w-full rounded-md border border-[#cbd5e1] bg-white p-3 font-mono text-xs" placeholder={"key=value\nanotherKey=value"} value={action.configText} onChange={(event) => updateAutomationAction(action.id, { configText: event.target.value })} />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveAutomation}><Save size={16} /> Save automation</button>
+                {editingAutomationId && <button className="rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" onClick={() => { setEditingAutomationId(null); setAutomationForm(emptyAutomation); }}>Cancel</button>}
+              </div>
+            </Panel>
+
+            <Panel title="Automation Rules" icon={<Workflow size={18} />}>
+              <div className="space-y-3">
+                {automations.length === 0 && <p className="text-sm text-stone-600">No automations yet.</p>}
+                {automations.map((rule) => (
+                  <div key={rule.id} className="rounded-md border border-[#dde3ec] bg-white p-4 shadow-sm">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="font-black text-[#16202a]">{rule.name}</div>
+                          <span className={`rounded-full px-2 py-1 text-[11px] font-black ${rule.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{rule.isActive ? "Active" : "Inactive"}</span>
+                        </div>
+                        {rule.description && <p className="mt-1 text-sm text-[#64748b]">{rule.description}</p>}
+                        <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
+                          <span className="rounded-md bg-[#eef5ff] px-2 py-1 text-[#2563eb]">When {automationTriggerOptions.find((item) => item.value === rule.trigger.type)?.label ?? rule.trigger.type}</span>
+                          {rule.actions.map((action) => <span key={action.id} className="rounded-md bg-[#fff8df] px-2 py-1 text-[#8a6100]">Then {automationActionOptions.find((item) => item.value === action.type)?.label ?? action.type}</span>)}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        <button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => toggleAutomation(rule)}>{rule.isActive ? "Pause" : "Activate"}</button>
+                        <button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => editAutomation(rule)}>Edit</button>
+                        <button className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700" onClick={() => deleteAutomation(rule)}>Delete</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Panel>
           </section>}
 
           {activeTab === "settings" && <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
