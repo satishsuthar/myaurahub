@@ -17,6 +17,7 @@ const defaultAppointment: Omit<AppointmentType, "id" | "isActive"> = {
   minimumNoticeMinutes: 120,
   maximumBookingWindowDays: 30,
   serviceIntervalMinutes: 15,
+  lookBusyPercentage: 0,
   timezone: "Australia/Sydney"
 };
 
@@ -61,6 +62,9 @@ function AdminApp() {
   const [savingAvailability, setSavingAvailability] = useState(false);
   const [theme, setTheme] = useState<ThemeConfig>(defaultTheme);
   const [savingTheme, setSavingTheme] = useState(false);
+  const [durationUnit, setDurationUnit] = useState<"minutes" | "hours">("minutes");
+  const [intervalUnit, setIntervalUnit] = useState<"minutes" | "hours">("minutes");
+  const [noticeUnit, setNoticeUnit] = useState<"minutes" | "hours">("hours");
 
   if (!authUser) {
     return <AuthPage onAuthenticated={setAuthUser} />;
@@ -186,8 +190,12 @@ function AdminApp() {
       minimumNoticeMinutes: item.minimumNoticeMinutes,
       maximumBookingWindowDays: item.maximumBookingWindowDays,
       serviceIntervalMinutes: item.serviceIntervalMinutes ?? 15,
+      lookBusyPercentage: item.lookBusyPercentage ?? 0,
       timezone: item.timezone
     });
+    setDurationUnit(item.durationMinutes % 60 === 0 ? "hours" : "minutes");
+    setIntervalUnit((item.serviceIntervalMinutes ?? 15) % 60 === 0 ? "hours" : "minutes");
+    setNoticeUnit(item.minimumNoticeMinutes % 60 === 0 ? "hours" : "minutes");
     setActiveTab("calendars");
   }
 
@@ -247,8 +255,9 @@ function AdminApp() {
                       <th className="px-4 py-3">Name</th>
                       <th className="px-4 py-3">Duration</th>
                       <th className="px-4 py-3">Interval</th>
-                      <th className="px-4 py-3">Buffers</th>
-                      <th className="px-4 py-3">Link</th>
+                        <th className="px-4 py-3">Buffers</th>
+                        <th className="px-4 py-3">Look busy</th>
+                        <th className="px-4 py-3">Link</th>
                       <th className="px-4 py-3">Status</th>
                       <th className="px-4 py-3"></th>
                     </tr>
@@ -260,6 +269,7 @@ function AdminApp() {
                         <td className="px-4 py-3">{item.durationMinutes} min</td>
                         <td className="px-4 py-3">{item.serviceIntervalMinutes ?? 15} min</td>
                         <td className="px-4 py-3">{item.bufferBeforeMinutes}/{item.bufferAfterMinutes} min</td>
+                        <td className="px-4 py-3">{item.lookBusyPercentage ?? 0}%</td>
                         <td className="px-4 py-3">
                           <a className="inline-flex items-center gap-1 text-moss hover:underline" href={`/book/${authUser.workspaceSlug}/${item.slug}`}>
                             <Copy size={14} /> {item.slug}
@@ -284,12 +294,13 @@ function AdminApp() {
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} />
                 <Field label="Slug" value={form.slug} onChange={(value) => setForm({ ...form, slug: value })} />
-                <Field label="Duration minutes" type="number" value={String(form.durationMinutes)} onChange={(value) => setForm({ ...form, durationMinutes: Number(value) })} />
-                <Field label="Service interval minutes" type="number" value={String(form.serviceIntervalMinutes)} onChange={(value) => setForm({ ...form, serviceIntervalMinutes: Number(value) })} />
+                <UnitField label="Service duration" minutes={form.durationMinutes} unit={durationUnit} onUnitChange={setDurationUnit} onMinutesChange={(minutes) => setForm({ ...form, durationMinutes: minutes })} />
+                <UnitField label="Service interval" minutes={form.serviceIntervalMinutes} unit={intervalUnit} onUnitChange={setIntervalUnit} onMinutesChange={(minutes) => setForm({ ...form, serviceIntervalMinutes: minutes })} />
                 <Field label="Buffer before minutes" type="number" value={String(form.bufferBeforeMinutes)} onChange={(value) => setForm({ ...form, bufferBeforeMinutes: Number(value) })} />
                 <Field label="Buffer after minutes" type="number" value={String(form.bufferAfterMinutes)} onChange={(value) => setForm({ ...form, bufferAfterMinutes: Number(value) })} />
-                <Field label="Minimum notice minutes" type="number" value={String(form.minimumNoticeMinutes)} onChange={(value) => setForm({ ...form, minimumNoticeMinutes: Number(value) })} />
+                <UnitField label="Minimum scheduling notice" minutes={form.minimumNoticeMinutes} unit={noticeUnit} onUnitChange={setNoticeUnit} onMinutesChange={(minutes) => setForm({ ...form, minimumNoticeMinutes: minutes })} />
                 <Field label="Maximum window days" type="number" value={String(form.maximumBookingWindowDays)} onChange={(value) => setForm({ ...form, maximumBookingWindowDays: Number(value) })} />
+                <Field label="Look busy percentage" type="number" value={String(form.lookBusyPercentage)} onChange={(value) => setForm({ ...form, lookBusyPercentage: Math.max(0, Math.min(100, Number(value))) })} />
               </div>
               <textarea className="mt-4 min-h-24 w-full rounded-md border border-stone-300 bg-white p-3 text-sm" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
               <div className="mt-4 flex gap-2">
@@ -480,6 +491,7 @@ function PublicBookingPage() {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
   const [customer, setCustomer] = useState({ firstName: "", lastName: "", email: "", phone: "", notes: "" });
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
 
@@ -513,6 +525,9 @@ function PublicBookingPage() {
   async function confirmBooking() {
     if (!selectedSlot) return;
     setError("");
+    const validation = validateCustomer(customer);
+    setFieldErrors(validation);
+    if (Object.keys(validation).length > 0) return;
     const response = await fetch(`${apiBase}/api/public/booking/${workspaceSlug}/${appointmentSlug}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -662,15 +677,15 @@ function PublicBookingPage() {
                 {new Date(selectedSlot.displayStart).toLocaleString([], { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })}
               </div>
               <div className="mt-4 space-y-3">
-                <Field label="First name" value={customer.firstName} onChange={(value) => setCustomer({ ...customer, firstName: value })} />
-                <Field label="Last name" value={customer.lastName} onChange={(value) => setCustomer({ ...customer, lastName: value })} />
-                <Field label="Email" value={customer.email} onChange={(value) => setCustomer({ ...customer, email: value })} />
-                <Field label="Phone" value={customer.phone} onChange={(value) => setCustomer({ ...customer, phone: value })} />
+                <Field label="First name" value={customer.firstName} error={fieldErrors.firstName} onChange={(value) => setCustomer({ ...customer, firstName: value })} />
+                <Field label="Last name" value={customer.lastName} error={fieldErrors.lastName} onChange={(value) => setCustomer({ ...customer, lastName: value })} />
+                <Field label="Email" type="email" value={customer.email} error={fieldErrors.email} onChange={(value) => setCustomer({ ...customer, email: value })} />
+                <Field label="Phone" type="tel" value={customer.phone} error={fieldErrors.phone} onChange={(value) => setCustomer({ ...customer, phone: value })} />
               </div>
               {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
               <button
                 className="mt-5 w-full rounded-md bg-[var(--theme-primary)] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-[#c9c9c9]"
-                disabled={!customer.firstName || !customer.email}
+                disabled={!customer.firstName || !customer.lastName || !customer.email || !customer.phone}
                 onClick={confirmBooking}
               >
                 Schedule Event
@@ -714,6 +729,17 @@ function buildMonthDays(month: Date) {
   for (let day = 1; day <= last.getDate(); day++) days.push(new Date(month.getFullYear(), month.getMonth(), day));
   while (days.length % 7 !== 0) days.push(null);
   return days;
+}
+
+function validateCustomer(customer: { firstName: string; lastName: string; email: string; phone: string }) {
+  const errors: Record<string, string> = {};
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+  const phonePattern = /^\+?[0-9\s().-]{7,20}$/;
+  if (customer.firstName.trim().length < 2) errors.firstName = "Enter at least 2 characters.";
+  if (customer.lastName.trim().length < 2) errors.lastName = "Enter at least 2 characters.";
+  if (!emailPattern.test(customer.email.trim())) errors.email = "Enter a valid email address.";
+  if (!phonePattern.test(customer.phone.trim())) errors.phone = "Enter a valid phone number.";
+  return errors;
 }
 
 function NavItem({ icon, label, active = false, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void }) {
@@ -768,6 +794,25 @@ function ColorField({ label, value, onChange }: { label: string; value: string; 
   );
 }
 
+function UnitField({ label, minutes, unit, onUnitChange, onMinutesChange }: { label: string; minutes: number; unit: "minutes" | "hours"; onUnitChange: (unit: "minutes" | "hours") => void; onMinutesChange: (minutes: number) => void }) {
+  const displayValue = unit === "hours" ? minutes / 60 : minutes;
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 block font-semibold text-[#475569]">{label}</span>
+      <div className="grid grid-cols-[1fr_104px] overflow-hidden rounded-md border border-[#cbd5e1] bg-white">
+        <input className="min-w-0 border-0 p-2 outline-none" type="number" min={unit === "hours" ? 0.25 : 1} step={unit === "hours" ? 0.25 : 1} value={String(displayValue)} onChange={(event) => onMinutesChange(Math.round(Number(event.target.value) * (unit === "hours" ? 60 : 1)))} />
+        <select className="border-l border-[#cbd5e1] bg-[#f8fafc] p-2 outline-none" value={unit} onChange={(event) => {
+          const nextUnit = event.target.value as "minutes" | "hours";
+          onUnitChange(nextUnit);
+        }}>
+          <option value="minutes">Minutes</option>
+          <option value="hours">Hours</option>
+        </select>
+      </div>
+    </label>
+  );
+}
+
 function SelectField({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
   return (
     <label className="block text-sm">
@@ -795,11 +840,12 @@ function themeStyle(theme: ThemeConfig = defaultTheme): React.CSSProperties {
   } as React.CSSProperties;
 }
 
-function Field({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
+function Field({ label, value, onChange, type = "text", error }: { label: string; value: string; onChange: (value: string) => void; type?: string; error?: string }) {
   return (
     <label className="block text-sm">
       <span className="mb-1 block font-semibold text-[#475569]">{label}</span>
-      <input className="w-full rounded-md border border-[#cbd5e1] bg-white p-2 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-blue-100" type={type} value={value} onChange={(event) => onChange(event.target.value)} />
+      <input className={`w-full rounded-md border bg-white p-2 outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-blue-100 ${error ? "border-rose-300" : "border-[#cbd5e1]"}`} type={type} value={value} onChange={(event) => onChange(event.target.value)} />
+      {error && <span className="mt-1 block text-xs font-semibold text-rose-700">{error}</span>}
     </label>
   );
 }

@@ -20,6 +20,7 @@ export type AppointmentType = {
   minimumNoticeMinutes: number;
   maximumBookingWindowDays: number;
   serviceIntervalMinutes: number;
+  lookBusyPercentage: number;
   timezone: string;
   isActive: boolean;
 };

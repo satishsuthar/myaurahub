@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import uuid
 import base64
 import hashlib
@@ -129,6 +130,16 @@ def slugify(value):
     return "-".join(part for part in cleaned.split("-") if part)[:60] or f"workspace-{uuid.uuid4().hex[:8]}"
 
 
+def bounded_int(value, minimum, maximum, label):
+    try:
+        number = int(value)
+    except Exception:
+        raise ValueError(f"{label} must be a number.")
+    if number < minimum or number > maximum:
+        raise ValueError(f"{label} must be between {minimum} and {maximum}.")
+    return number
+
+
 def hash_password(password, salt=None):
     salt_bytes = base64.b64decode(salt) if salt else secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt_bytes, 200_000)
@@ -217,7 +228,7 @@ def seed_workspace_defaults(workspace_slug, workspace_id, user_id, workspace_nam
         "name": "Discovery Call", "description": "A short introductory consultation.", "slug": "discovery-call",
         "durationMinutes": 30, "locationType": "Online", "locationValue": "Meeting link provided after booking",
         "bufferBeforeMinutes": 0, "bufferAfterMinutes": 15, "minimumNoticeMinutes": 120,
-        "maximumBookingWindowDays": 30, "serviceIntervalMinutes": 15, "timezone": TZ, "isActive": True, "createdAtUtc": now,
+        "maximumBookingWindowDays": 30, "serviceIntervalMinutes": 15, "lookBusyPercentage": 0, "timezone": TZ, "isActive": True, "createdAtUtc": now,
     })
     for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]:
         table.put_item(Item={"pk": f"USER#{user_id}", "sk": f"AVAIL#{day}#09:00", "entity": "availability", "workspaceSlug": workspace_slug, "userId": user_id, "dayOfWeek": day, "startTime": "09:00", "endTime": "17:00", "timezone": TZ})
@@ -234,14 +245,17 @@ def create_appointment_type(context, data):
     if existing:
         raise ValueError("This public link slug already exists. Edit the existing appointment type or choose a different slug.")
     workspace = table.get_item(Key={"pk": workspace_pk(context["workspaceSlug"]), "sk": "META"}).get("Item") or {}
+    duration = bounded_int(data.get("durationMinutes", 30), 1, 1440, "Duration")
+    interval = bounded_int(data.get("serviceIntervalMinutes", 15), 1, 1440, "Service interval")
     item = {
         "pk": workspace_pk(context["workspaceSlug"]), "sk": appt_sk(slug), "entity": "appointmentType",
         "id": str(uuid.uuid4()), "workspaceId": workspace.get("id", context["workspaceSlug"]), "assignedUserId": context["userId"],
         "name": data["name"], "description": data.get("description"), "slug": slug,
-        "durationMinutes": int(data.get("durationMinutes", 30)), "locationType": data.get("locationType", "Online"),
+        "durationMinutes": duration, "locationType": data.get("locationType", "Online"),
         "locationValue": data.get("locationValue"), "bufferBeforeMinutes": int(data.get("bufferBeforeMinutes", 0)),
-        "bufferAfterMinutes": int(data.get("bufferAfterMinutes", 0)), "minimumNoticeMinutes": int(data.get("minimumNoticeMinutes", 0)),
-        "maximumBookingWindowDays": int(data.get("maximumBookingWindowDays", 30)), "serviceIntervalMinutes": int(data.get("serviceIntervalMinutes", 15)),
+        "bufferAfterMinutes": int(data.get("bufferAfterMinutes", 0)), "minimumNoticeMinutes": bounded_int(data.get("minimumNoticeMinutes", 0), 0, 525600, "Minimum scheduling notice"),
+        "maximumBookingWindowDays": int(data.get("maximumBookingWindowDays", 30)), "serviceIntervalMinutes": interval,
+        "lookBusyPercentage": bounded_int(data.get("lookBusyPercentage", 0), 0, 100, "Look busy percentage"),
         "timezone": data.get("timezone", TZ),
         "isActive": True, "createdAtUtc": datetime.utcnow().isoformat() + "Z",
     }
@@ -261,14 +275,15 @@ def update_appointment_type(context, appointment_id, data):
         "name": data.get("name", current.get("name", "")),
         "description": data.get("description"),
         "slug": slug,
-        "durationMinutes": int(data.get("durationMinutes", current.get("durationMinutes", 30))),
+        "durationMinutes": bounded_int(data.get("durationMinutes", current.get("durationMinutes", 30)), 1, 1440, "Duration"),
         "locationType": data.get("locationType", current.get("locationType", "Online")),
         "locationValue": data.get("locationValue"),
         "bufferBeforeMinutes": int(data.get("bufferBeforeMinutes", current.get("bufferBeforeMinutes", 0))),
         "bufferAfterMinutes": int(data.get("bufferAfterMinutes", current.get("bufferAfterMinutes", 0))),
-        "minimumNoticeMinutes": int(data.get("minimumNoticeMinutes", current.get("minimumNoticeMinutes", 0))),
+        "minimumNoticeMinutes": bounded_int(data.get("minimumNoticeMinutes", current.get("minimumNoticeMinutes", 0)), 0, 525600, "Minimum scheduling notice"),
         "maximumBookingWindowDays": int(data.get("maximumBookingWindowDays", current.get("maximumBookingWindowDays", 30))),
-        "serviceIntervalMinutes": int(data.get("serviceIntervalMinutes", current.get("serviceIntervalMinutes", 15))),
+        "serviceIntervalMinutes": bounded_int(data.get("serviceIntervalMinutes", current.get("serviceIntervalMinutes", 15)), 1, 1440, "Service interval"),
+        "lookBusyPercentage": bounded_int(data.get("lookBusyPercentage", current.get("lookBusyPercentage", 0)), 0, 100, "Look busy percentage"),
         "timezone": data.get("timezone", current.get("timezone", TZ)),
         "isActive": bool(data.get("isActive", current.get("isActive", True))),
         "updatedAtUtc": datetime.utcnow().isoformat() + "Z",
@@ -287,8 +302,9 @@ def find_appointment_by_id(workspace_slug, appointment_id):
 
 
 def public_appt_shape(item):
-    shaped = {k: item.get(k) for k in ["id", "workspaceId", "assignedUserId", "name", "description", "slug", "durationMinutes", "locationType", "locationValue", "bufferBeforeMinutes", "bufferAfterMinutes", "minimumNoticeMinutes", "maximumBookingWindowDays", "serviceIntervalMinutes", "timezone", "isActive"]}
+    shaped = {k: item.get(k) for k in ["id", "workspaceId", "assignedUserId", "name", "description", "slug", "durationMinutes", "locationType", "locationValue", "bufferBeforeMinutes", "bufferAfterMinutes", "minimumNoticeMinutes", "maximumBookingWindowDays", "serviceIntervalMinutes", "lookBusyPercentage", "timezone", "isActive"]}
     shaped["serviceIntervalMinutes"] = int(shaped.get("serviceIntervalMinutes") or 15)
+    shaped["lookBusyPercentage"] = int(shaped.get("lookBusyPercentage") or 0)
     return shaped
 
 
@@ -434,12 +450,24 @@ def generate_slots(appt, from_date, to_date, display_tz):
                 slot_end = slot_start + timedelta(minutes=duration)
                 blocked_start = slot_start - timedelta(minutes=int(appt.get("bufferBeforeMinutes", 0)))
                 blocked_end = slot_end + timedelta(minutes=int(appt.get("bufferAfterMinutes", 0)))
-                if min_bookable <= slot_start <= max_bookable and not conflicts(bookings, blocked_start, blocked_end):
+                hidden_by_look_busy = should_hide_slot(appt, slot_start)
+                if min_bookable <= slot_start <= max_bookable and not hidden_by_look_busy and not conflicts(bookings, blocked_start, blocked_end):
                     display = slot_start.astimezone(ZoneInfo(display_tz)).isoformat()
                     slots.append({"startUtc": slot_start.isoformat().replace("+00:00", "Z"), "endUtc": slot_end.isoformat().replace("+00:00", "Z"), "displayStart": display})
                 cursor += timedelta(minutes=int(appt.get("serviceIntervalMinutes", 15)))
         day += timedelta(days=1)
     return slots
+
+
+def should_hide_slot(appt, slot_start):
+    percentage = int(appt.get("lookBusyPercentage", 0) or 0)
+    if percentage <= 0:
+        return False
+    if percentage >= 100:
+        return True
+    key = f"{appt.get('id')}:{slot_start.isoformat()}".encode("utf-8")
+    value = int(hashlib.sha256(key).hexdigest()[:8], 16) % 100
+    return value < percentage
 
 
 def conflicts(bookings, blocked_start, blocked_end):
@@ -454,6 +482,7 @@ def conflicts(bookings, blocked_start, blocked_end):
 
 
 def create_booking(appt, data):
+    customer = validate_booking_customer(data)
     start = datetime.fromisoformat(data["startUtc"].replace("Z", "+00:00"))
     valid = any(slot["startUtc"] == data["startUtc"].replace("+00:00", "Z") for slot in generate_slots(appt, start.date().isoformat(), start.date().isoformat(), data.get("timezone", TZ)))
     if not valid:
@@ -466,11 +495,27 @@ def create_booking(appt, data):
         raise ConflictError("The selected slot has just been booked.")
 
     booking_id = str(uuid.uuid4())
-    email = data["email"].strip().lower()
+    email = customer["email"].strip().lower()
     now = datetime.utcnow().isoformat() + "Z"
-    table.put_item(Item={"pk": appt["pk"], "sk": f"CONTACT#{email}", "entity": "contact", "id": str(uuid.uuid4()), "firstName": data.get("firstName", ""), "lastName": data.get("lastName", ""), "email": data["email"], "normalizedEmail": email, "phone": data.get("phone"), "timezone": data.get("timezone", TZ), "source": "CalendarBooking", "updatedAtUtc": now})
-    table.put_item(Item={"pk": appt["pk"], "sk": f"BOOKING#{booking_id}", "entity": "booking", "id": booking_id, "appointmentTypeId": appt["id"], "userId": appt["assignedUserId"], "status": "Confirmed", "startUtc": start.isoformat().replace("+00:00", "Z"), "endUtc": end.isoformat().replace("+00:00", "Z"), "blockedStartUtc": blocked_start.isoformat().replace("+00:00", "Z"), "blockedEndUtc": blocked_end.isoformat().replace("+00:00", "Z"), "customerName": f"{data.get('firstName','')} {data.get('lastName','')}".strip(), "customerEmail": data["email"], "customerPhone": data.get("phone"), "notes": data.get("notes"), "createdAtUtc": now})
+    table.put_item(Item={"pk": appt["pk"], "sk": f"CONTACT#{email}", "entity": "contact", "id": str(uuid.uuid4()), "firstName": customer["firstName"], "lastName": customer["lastName"], "email": customer["email"], "normalizedEmail": email, "phone": customer["phone"], "timezone": data.get("timezone", TZ), "source": "CalendarBooking", "updatedAtUtc": now})
+    table.put_item(Item={"pk": appt["pk"], "sk": f"BOOKING#{booking_id}", "entity": "booking", "id": booking_id, "appointmentTypeId": appt["id"], "userId": appt["assignedUserId"], "status": "Confirmed", "startUtc": start.isoformat().replace("+00:00", "Z"), "endUtc": end.isoformat().replace("+00:00", "Z"), "blockedStartUtc": blocked_start.isoformat().replace("+00:00", "Z"), "blockedEndUtc": blocked_end.isoformat().replace("+00:00", "Z"), "customerName": f"{customer['firstName']} {customer['lastName']}".strip(), "customerEmail": customer["email"], "customerPhone": customer["phone"], "notes": data.get("notes"), "createdAtUtc": now})
     return {"bookingId": booking_id, "status": "Confirmed", "startUtc": start.isoformat().replace("+00:00", "Z"), "endUtc": end.isoformat().replace("+00:00", "Z")}
+
+
+def validate_booking_customer(data):
+    first_name = str(data.get("firstName", "")).strip()
+    last_name = str(data.get("lastName", "")).strip()
+    email = str(data.get("email", "")).strip()
+    phone = str(data.get("phone", "")).strip()
+    if len(first_name) < 2:
+        raise ValueError("First name must be at least 2 characters.")
+    if len(last_name) < 2:
+        raise ValueError("Last name must be at least 2 characters.")
+    if not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$", email):
+        raise ValueError("Enter a valid email address.")
+    if not re.match(r"^\+?[0-9\s().-]{7,20}$", phone):
+        raise ValueError("Enter a valid phone number.")
+    return {"firstName": first_name[:80], "lastName": last_name[:80], "email": email[:254], "phone": phone[:30]}
 
 
 def list_bookings(workspace_slug=WORKSPACE_SLUG):
