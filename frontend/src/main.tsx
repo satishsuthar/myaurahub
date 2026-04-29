@@ -1003,6 +1003,13 @@ function AdminApp() {
 
           {activeTab === "automations" && <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
             <Panel title={editingAutomationId ? "Edit Automation" : "Create Automation"} icon={<Workflow size={18} />}>
+              <AutomationDiagram
+                title={automationForm.name || "New automation"}
+                triggerLabel={automationTriggerOptions.find((item) => item.value === automationForm.triggerType)?.label ?? automationForm.triggerType}
+                filterLabel={automationForm.filterKey ? `${automationForm.filterKey} = ${automationForm.filterValue || "any"}` : ""}
+                actions={automationForm.actions.map((action) => automationActionOptions.find((item) => item.value === action.type)?.label ?? action.type)}
+                isActive={automationForm.isActive}
+              />
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Automation name" value={automationForm.name} onChange={(value) => setAutomationForm({ ...automationForm, name: value })} />
                 <label className="text-sm font-bold text-[#334155]">Status
@@ -1065,6 +1072,14 @@ function AdminApp() {
                           <span className={`rounded-full px-2 py-1 text-[11px] font-black ${rule.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{rule.isActive ? "Active" : "Inactive"}</span>
                         </div>
                         {rule.description && <p className="mt-1 text-sm text-[#64748b]">{rule.description}</p>}
+                        <AutomationDiagram
+                          title={rule.name}
+                          triggerLabel={automationTriggerOptions.find((item) => item.value === rule.trigger.type)?.label ?? rule.trigger.type}
+                          filterLabel={Object.entries(rule.trigger.filters ?? {}).map(([key, value]) => `${key} = ${value}`).join(", ")}
+                          actions={rule.actions.map((action) => automationActionOptions.find((item) => item.value === action.type)?.label ?? action.type)}
+                          isActive={rule.isActive}
+                          compact
+                        />
                         <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
                           <span className="rounded-md bg-[#eef5ff] px-2 py-1 text-[#2563eb]">When {automationTriggerOptions.find((item) => item.value === rule.trigger.type)?.label ?? rule.trigger.type}</span>
                           {rule.actions.map((action) => <span key={action.id} className="rounded-md bg-[#fff8df] px-2 py-1 text-[#8a6100]">Then {automationActionOptions.find((item) => item.value === action.type)?.label ?? action.type}</span>)}
@@ -1516,6 +1531,50 @@ function Panel({ title, icon, children }: { title: string; icon: React.ReactNode
       {children}
       </div>
     </section>
+  );
+}
+
+function AutomationDiagram({ title, triggerLabel, filterLabel, actions, isActive, compact = false }: { title: string; triggerLabel: string; filterLabel?: string; actions: string[]; isActive: boolean; compact?: boolean }) {
+  const visibleActions = actions.length ? actions : ["No action selected"];
+  return (
+    <div className={`${compact ? "mt-3 p-3" : "mb-5 p-4"} overflow-x-auto rounded-md border border-[#dde3ec] bg-[linear-gradient(135deg,#f8fbff,#fffdf4_52%,#f7fbf8)]`}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="text-sm font-black text-[#16202a]">{compact ? "Flow" : title}</div>
+        <span className={`rounded-full px-2 py-1 text-[11px] font-black ${isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{isActive ? "Active" : "Inactive"}</span>
+      </div>
+      <div className="flex min-w-max items-center gap-3">
+        <DiagramNode label="Trigger" value={triggerLabel} tone="blue" />
+        {filterLabel && <>
+          <DiagramArrow />
+          <DiagramNode label="Filter" value={filterLabel} tone="yellow" />
+        </>}
+        {visibleActions.map((action, index) => (
+          <React.Fragment key={`${action}-${index}`}>
+            <DiagramArrow />
+            <DiagramNode label={`Action ${index + 1}`} value={action} tone={index % 2 === 0 ? "green" : "pink"} />
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DiagramArrow() {
+  return <div className="flex items-center text-[#94a3b8]"><span className="h-px w-8 bg-[#cbd5e1]" /><span className="-ml-1 text-lg">›</span></div>;
+}
+
+function DiagramNode({ label, value, tone }: { label: string; value: string; tone: "blue" | "yellow" | "green" | "pink" }) {
+  const tones = {
+    blue: "border-[#bfdbfe] bg-[#eef5ff] text-[#174ea6]",
+    yellow: "border-[#fde68a] bg-[#fff8df] text-[#8a6100]",
+    green: "border-[#bbf7d0] bg-[#edf8f1] text-[#137333]",
+    pink: "border-[#fbcfe8] bg-[#fff1f8] text-[#9d174d]"
+  };
+  return (
+    <div className={`min-h-20 w-44 rounded-md border p-3 shadow-sm ${tones[tone]}`}>
+      <div className="text-[10px] font-black uppercase tracking-wide opacity-75">{label}</div>
+      <div className="mt-1 text-sm font-black leading-snug">{value}</div>
+    </div>
   );
 }
 
