@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Calendar, Check, Clock, Copy, ExternalLink, MapPin, Plus, Save, Settings, Trash2, Users } from "lucide-react";
+import { Calendar, Check, Clock, Copy, ExternalLink, Lock, LogOut, MapPin, Plus, Save, Settings, Trash2, Users } from "lucide-react";
 import "./index.css";
-import { api, apiBase, AppointmentType, AvailabilityRule, Booking, Slot, UnavailabilityDate, userId } from "./api";
+import { api, apiBase, AppointmentType, AvailabilityRule, AuthResponse, AuthUser, Booking, Slot, UnavailabilityDate, clearAuth, getAuthUser, saveAuth, userId } from "./api";
 
 const defaultAppointment: Omit<AppointmentType, "id" | "isActive"> = {
   assignedUserId: userId,
@@ -27,6 +27,7 @@ function Router() {
 }
 
 function AdminApp() {
+  const [authUser, setAuthUser] = useState<AuthUser | null>(() => getAuthUser());
   const [appointments, setAppointments] = useState<AppointmentType[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [rules, setRules] = useState<AvailabilityRule[]>([]);
@@ -35,6 +36,10 @@ function AdminApp() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"calendars" | "availability" | "bookings" | "settings">("calendars");
   const [message, setMessage] = useState("");
+
+  if (!authUser) {
+    return <AuthPage onAuthenticated={setAuthUser} />;
+  }
 
   async function load() {
     const [appointmentData, bookingData, availabilityData, unavailableData] = await Promise.all([
@@ -50,8 +55,15 @@ function AdminApp() {
   }
 
   useEffect(() => {
-    load().catch((error) => setMessage(error.message));
-  }, []);
+    load().catch((error) => {
+      if (error.message.includes("401") || error.message.toLowerCase().includes("login required")) {
+        clearAuth();
+        setAuthUser(null);
+      } else {
+        setMessage(error.message);
+      }
+    });
+  }, [authUser]);
 
   async function saveAppointment() {
     await api<AppointmentType>(editingId ? `/api/calendar/appointment-types/${editingId}` : "/api/calendar/appointment-types", {
@@ -110,14 +122,15 @@ function AdminApp() {
     <main className="min-h-screen bg-[#f7f8f4] text-ink">
       <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-stone-200 bg-white px-4 py-5 lg:block">
         <div className="mb-8">
-          <div className="text-lg font-semibold">Acme Coaching</div>
-          <div className="text-sm text-stone-500">Calendar workspace</div>
+          <div className="text-lg font-semibold">{authUser.workspaceName}</div>
+          <div className="text-sm text-stone-500">/{authUser.workspaceSlug}</div>
         </div>
         <nav className="space-y-1 text-sm font-medium">
           <NavItem icon={<Calendar size={17} />} label="Calendars" active={activeTab === "calendars"} onClick={() => setActiveTab("calendars")} />
           <NavItem icon={<Clock size={17} />} label="Availability" active={activeTab === "availability"} onClick={() => setActiveTab("availability")} />
           <NavItem icon={<Users size={17} />} label="Bookings" active={activeTab === "bookings"} onClick={() => setActiveTab("bookings")} />
           <NavItem icon={<Settings size={17} />} label="Settings" active={activeTab === "settings"} onClick={() => setActiveTab("settings")} />
+          <NavItem icon={<LogOut size={17} />} label="Logout" onClick={() => { clearAuth(); setAuthUser(null); }} />
         </nav>
       </aside>
 
@@ -128,7 +141,7 @@ function AdminApp() {
               <h1 className="text-xl font-semibold">Calendar Booking</h1>
               <p className="text-sm text-stone-500">Appointment types, availability, buffers, notices, and bookings.</p>
             </div>
-            <a className="inline-flex items-center gap-2 rounded-md bg-ink px-4 py-2 text-sm font-semibold text-white" href="/book/acme-coaching/discovery-call">
+            <a className="inline-flex items-center gap-2 rounded-md bg-ink px-4 py-2 text-sm font-semibold text-white" href={`/book/${authUser.workspaceSlug}/${appointments[0]?.slug ?? "discovery-call"}`}>
               <ExternalLink size={16} /> Open booking page
             </a>
           </div>
@@ -161,7 +174,7 @@ function AdminApp() {
                         <td className="px-4 py-3">{item.serviceIntervalMinutes ?? 15} min</td>
                         <td className="px-4 py-3">{item.bufferBeforeMinutes}/{item.bufferAfterMinutes} min</td>
                         <td className="px-4 py-3">
-                          <a className="inline-flex items-center gap-1 text-moss hover:underline" href={`/book/acme-coaching/${item.slug}`}>
+                          <a className="inline-flex items-center gap-1 text-moss hover:underline" href={`/book/${authUser.workspaceSlug}/${item.slug}`}>
                             <Copy size={14} /> {item.slug}
                           </a>
                         </td>
@@ -260,14 +273,64 @@ function AdminApp() {
           {activeTab === "settings" && <section className="max-w-3xl">
             <Panel title="Settings" icon={<Settings size={18} />}>
               <div className="space-y-2 text-sm text-stone-600">
-                <p>Workspace: Acme Coaching</p>
+                <p>Workspace: {authUser.workspaceName}</p>
                 <p>Timezone: Australia/Sydney</p>
                 <p>Calendar mode: Personal calendar</p>
-                <p>Public booking URL: <a className="text-moss underline" href="/book/acme-coaching/discovery-call">/book/acme-coaching/discovery-call</a></p>
+                <p>Public booking URL: <a className="text-moss underline" href={`/book/${authUser.workspaceSlug}/${appointments[0]?.slug ?? "discovery-call"}`}>/book/{authUser.workspaceSlug}/{appointments[0]?.slug ?? "discovery-call"}</a></p>
               </div>
             </Panel>
           </section>}
         </div>
+      </section>
+    </main>
+  );
+}
+
+function AuthPage({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => void }) {
+  const [mode, setMode] = useState<"login" | "signup">("signup");
+  const [workspaceName, setWorkspaceName] = useState("Acme Coaching");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setError("");
+    const response = await fetch(`${apiBase}/api/auth/${mode}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(mode === "signup" ? { workspaceName, email, password } : { email, password })
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({ error: "Authentication failed." }));
+      setError(body.error ?? "Authentication failed.");
+      return;
+    }
+    const auth = await response.json() as AuthResponse;
+    saveAuth(auth);
+    onAuthenticated(auth.user);
+  }
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#f7f8f4] px-4 text-ink">
+      <section className="w-full max-w-md rounded-md border border-stone-200 bg-white p-7 shadow-sm">
+        <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-full bg-ink text-white">
+          <Lock size={20} />
+        </div>
+        <h1 className="text-2xl font-semibold">{mode === "signup" ? "Create your booking workspace" : "Login to your workspace"}</h1>
+        <p className="mt-2 text-sm text-stone-600">White-label calendar booking for coaches, consultants, clinics, and personal brands.</p>
+        <form className="mt-6 space-y-4" onSubmit={submit}>
+          {mode === "signup" && <Field label="Business / workspace name" value={workspaceName} onChange={setWorkspaceName} />}
+          <Field label="Email" value={email} onChange={setEmail} />
+          <Field label="Password" type="password" value={password} onChange={setPassword} />
+          {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          <button className="w-full rounded-md bg-ink px-4 py-3 text-sm font-semibold text-white">
+            {mode === "signup" ? "Create account" : "Login"}
+          </button>
+        </form>
+        <button className="mt-4 text-sm font-semibold text-moss" onClick={() => setMode(mode === "signup" ? "login" : "signup")}>
+          {mode === "signup" ? "Already have an account? Login" : "Need an account? Sign up"}
+        </button>
       </section>
     </main>
   );
@@ -300,7 +363,7 @@ function PublicBookingPage() {
   const selectedDaySlots = slotsByDate.get(selectedDate) ?? [];
 
   useEffect(() => {
-    fetch(`${apiBase}/api/public/booking/${workspaceSlug}/${appointmentSlug}`)
+    fetch(`${apiBase}/api/public/booking/${workspaceSlug}/${appointmentSlug}?t=${Date.now()}`, { cache: "no-store" })
       .then((response) => response.json())
       .then(setMetadata)
       .catch(() => setError("This booking page is unavailable."));
@@ -309,7 +372,7 @@ function PublicBookingPage() {
   useEffect(() => {
     const from = toDateKey(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), 1));
     const to = toDateKey(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0));
-    fetch(`${apiBase}/api/public/booking/${workspaceSlug}/${appointmentSlug}/slots?from=${from}&to=${to}&timezone=Australia/Sydney`)
+    fetch(`${apiBase}/api/public/booking/${workspaceSlug}/${appointmentSlug}/slots?from=${from}&to=${to}&timezone=Australia/Sydney&t=${Date.now()}`, { cache: "no-store" })
       .then((response) => response.json())
       .then((data) => setSlots(data.slots ?? []))
       .catch(() => setSlots([]));

@@ -14,6 +14,7 @@ $functionName = "$Prefix-api"
 $apiName = "$Prefix-http-api"
 $bucketName = "$Prefix-frontend-$AccountId-$AwsRegion"
 $tags = @("Key=Project,Value=calbook", "Key=App,Value=calbook")
+$sessionSecret = "$([guid]::NewGuid())$([guid]::NewGuid())$([guid]::NewGuid())"
 
 function Test-AwsCommand {
   param([scriptblock]$Command)
@@ -52,11 +53,15 @@ Start-Sleep -Seconds 10
 
 $roleArn = "arn:aws:iam::${AccountId}:role/$roleName"
 if (-not (Test-AwsCommand { aws lambda get-function --region $AwsRegion --function-name $functionName })) {
-  aws lambda create-function --region $AwsRegion --function-name $functionName --runtime python3.12 --role $roleArn --handler app.handler --zip-file "fileb://$zip" --timeout 30 --memory-size 256 --environment "Variables={TABLE_NAME=$tableName}" --tags Project=calbook,App=calbook
+  aws lambda create-function --region $AwsRegion --function-name $functionName --runtime python3.12 --role $roleArn --handler app.handler --zip-file "fileb://$zip" --timeout 30 --memory-size 256 --environment "Variables={TABLE_NAME=$tableName,SESSION_SECRET=$sessionSecret}" --tags Project=calbook,App=calbook
 } else {
+  $existingSecret = aws lambda get-function-configuration --region $AwsRegion --function-name $functionName --query "Environment.Variables.SESSION_SECRET" --output text
+  if ($existingSecret -and $existingSecret -ne "None") {
+    $sessionSecret = $existingSecret
+  }
   aws lambda update-function-code --region $AwsRegion --function-name $functionName --zip-file "fileb://$zip"
   aws lambda wait function-updated --region $AwsRegion --function-name $functionName
-  aws lambda update-function-configuration --region $AwsRegion --function-name $functionName --environment "Variables={TABLE_NAME=$tableName}"
+  aws lambda update-function-configuration --region $AwsRegion --function-name $functionName --environment "Variables={TABLE_NAME=$tableName,SESSION_SECRET=$sessionSecret}"
 }
 
 $functionArn = "arn:aws:lambda:${AwsRegion}:${AccountId}:function:$functionName"
