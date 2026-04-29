@@ -38,6 +38,7 @@ function AdminApp() {
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"success" | "error">("success");
   const [savingAppointment, setSavingAppointment] = useState(false);
+  const [savingAvailability, setSavingAvailability] = useState(false);
 
   if (!authUser) {
     return <AuthPage onAuthenticated={setAuthUser} />;
@@ -99,12 +100,23 @@ function AdminApp() {
   }
 
   async function saveAvailability() {
-    await api(`/api/calendar/users/${userId}/availability`, {
-      method: "PUT",
-      body: JSON.stringify({ timezone: "Australia/Sydney", rules })
-    });
-    setMessage("Availability saved.");
-    await load();
+    if (!authUser) return;
+    setSavingAvailability(true);
+    setMessage("");
+    try {
+      await api(`/api/calendar/users/${authUser.userId}/availability`, {
+        method: "PUT",
+        body: JSON.stringify({ timezone: "Australia/Sydney", rules })
+      });
+      setMessageTone("success");
+      setMessage("Availability saved. Customer calendar will use the updated hours.");
+      await load();
+    } catch (error) {
+      setMessageTone("error");
+      setMessage(error instanceof Error ? error.message : "Could not save availability.");
+    } finally {
+      setSavingAvailability(false);
+    }
   }
 
   async function saveUnavailability() {
@@ -251,15 +263,15 @@ function AdminApp() {
                     <select className="rounded-md border border-stone-300 bg-white p-2 text-sm" value={rule.dayOfWeek} onChange={(event) => updateRule(index, { dayOfWeek: event.target.value })}>
                       {weekdays.map((day) => <option key={day} value={day}>{day}</option>)}
                     </select>
-                    <input className="rounded-md border border-stone-300 bg-white p-2 text-sm" value={rule.startTime} onChange={(event) => updateRule(index, { startTime: event.target.value })} />
-                    <input className="rounded-md border border-stone-300 bg-white p-2 text-sm" value={rule.endTime} onChange={(event) => updateRule(index, { endTime: event.target.value })} />
+                    <input type="time" className="rounded-md border border-stone-300 bg-white p-2 text-sm" value={rule.startTime} onChange={(event) => updateRule(index, { startTime: event.target.value })} />
+                    <input type="time" className="rounded-md border border-stone-300 bg-white p-2 text-sm" value={rule.endTime} onChange={(event) => updateRule(index, { endTime: event.target.value })} />
                     <button className="rounded-md border border-stone-300 p-2" onClick={() => setRules(rules.filter((_, i) => i !== index))}><Trash2 size={16} /></button>
                   </div>
                 ))}
               </div>
               <div className="mt-4 flex gap-2">
                 <button className="rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" onClick={() => setRules([...rules, { dayOfWeek: "Monday", startTime: "09:00", endTime: "17:00" }])}>Add block</button>
-                <button className="rounded-md bg-[#2563eb] px-4 py-2 text-sm font-bold text-white" onClick={saveAvailability}>Save</button>
+                <button type="button" disabled={savingAvailability} className="rounded-md bg-[#2563eb] px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60" onClick={saveAvailability}>{savingAvailability ? "Saving..." : "Save"}</button>
               </div>
             </Panel>
             <Panel title="Fixed Date Unavailability & Holidays" icon={<Calendar size={18} />}>

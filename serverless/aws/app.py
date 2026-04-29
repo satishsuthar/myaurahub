@@ -77,8 +77,7 @@ def handler(event, _context):
         if path == "/api/calendar/availability/me" and method == "GET":
             return response(200, get_availability(context["userId"]))
         if path.startswith("/api/calendar/users/") and path.endswith("/availability") and method == "PUT":
-            user_id = context["userId"]
-            return response(200, replace_availability(user_id, body))
+            return response(200, replace_availability(context, body))
         if path == "/api/calendar/unavailability" and method == "GET":
             return response(200, get_unavailability(context["userId"]))
         if path == "/api/calendar/unavailability" and method == "PUT":
@@ -288,13 +287,33 @@ def get_availability(user_id):
     return [{k: item.get(k) for k in ["dayOfWeek", "startTime", "endTime", "timezone"]} for item in result.get("Items", [])]
 
 
-def replace_availability(user_id, data):
+def normalize_time(value):
+    hour, minute = str(value).strip().split(":")[:2]
+    return f"{int(hour):02d}:{int(minute):02d}"
+
+
+def replace_availability(context, data):
+    user_id = context["userId"]
     existing = table.query(KeyConditionExpression=Key("pk").eq(f"USER#{user_id}") & Key("sk").begins_with("AVAIL#")).get("Items", [])
+    normalized_rules = {}
+    for rule in data.get("rules", []):
+        start_time = normalize_time(rule["startTime"])
+        end_time = normalize_time(rule["endTime"])
+        if start_time >= end_time:
+            raise ValueError("Availability start time must be before end time.")
+        key = (rule["dayOfWeek"], start_time)
+        normalized_rules[key] = {
+            "dayOfWeek": rule["dayOfWeek"],
+            "startTime": start_time,
+            "endTime": end_time,
+        }
+
     with table.batch_writer() as batch:
         for item in existing:
             batch.delete_item(Key={"pk": item["pk"], "sk": item["sk"]})
-        for rule in data.get("rules", []):
-            batch.put_item(Item={"pk": f"USER#{user_id}", "sk": f"AVAIL#{rule['dayOfWeek']}#{rule['startTime']}", "entity": "availability", "workspaceSlug": WORKSPACE_SLUG, "userId": user_id, "dayOfWeek": rule["dayOfWeek"], "startTime": rule["startTime"], "endTime": rule["endTime"], "timezone": data.get("timezone", TZ)})
+    with table.batch_writer() as batch:
+        for rule in normalized_rules.values():
+            batch.put_item(Item={"pk": f"USER#{user_id}", "sk": f"AVAIL#{rule['dayOfWeek']}#{rule['startTime']}", "entity": "availability", "workspaceSlug": context["workspaceSlug"], "userId": user_id, "dayOfWeek": rule["dayOfWeek"], "startTime": rule["startTime"], "endTime": rule["endTime"], "timezone": data.get("timezone", TZ)})
     return get_availability(user_id)
 
 
