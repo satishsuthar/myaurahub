@@ -773,6 +773,7 @@ def update_opportunity(context, opportunity_id, data):
 VALID_AUTOMATION_TRIGGERS = {
     "AppointmentBooked",
     "BookingCancelled",
+    "AppointmentStartsSoon",
     "AppointmentTypeCreated",
     "AvailabilityChanged",
     "ContactCreated",
@@ -783,6 +784,8 @@ VALID_AUTOMATION_TRIGGERS = {
     "OpportunityMoved",
     "PipelineCreated",
     "AutomationStarted",
+    "ExternalWebhook",
+    "RecurringSchedule",
     "SitePageCreated",
     "SitePagePublished",
     "SitePageVisited",
@@ -796,6 +799,11 @@ VALID_AUTOMATION_ACTIONS = {
     "SendEmail",
     "InternalNotification",
     "Webhook",
+    "CallExternalApi",
+    "CreateOpportunity",
+    "MoveOpportunity",
+    "TriggerEvent",
+    "SetData",
     "IfElse",
     "Wait",
     "Branch",
@@ -803,6 +811,42 @@ VALID_AUTOMATION_ACTIONS = {
     "StartAutomation",
     "StopAutomation",
 }
+
+
+def clean_automation_actions(raw_actions, depth=0):
+    actions = []
+    if not isinstance(raw_actions, list) or depth > 8:
+        return actions
+    for index, action in enumerate(raw_actions[:100]):
+        if not isinstance(action, dict):
+            continue
+        action_type = str(action.get("type", "")).strip()
+        if action_type not in VALID_AUTOMATION_ACTIONS:
+            raise ValueError("Automation action is not supported.")
+        config = action.get("config", {}) if isinstance(action.get("config", {}), dict) else {}
+        clean_action = {
+            "id": str(action.get("id") or f"action-{index + 1}")[:80],
+            "type": action_type,
+            "config": {str(k).strip()[:120]: str(v).strip()[:2000] for k, v in config.items() if str(k).strip()},
+        }
+        then_steps = clean_automation_actions(action.get("then", []), depth + 1)
+        else_steps = clean_automation_actions(action.get("else", []), depth + 1)
+        if then_steps:
+            clean_action["then"] = then_steps
+        if else_steps:
+            clean_action["else"] = else_steps
+        branches = []
+        for branch in action.get("branches", []) if isinstance(action.get("branches", []), list) else []:
+            if isinstance(branch, dict):
+                branches.append({
+                    "id": str(branch.get("id") or f"branch-{len(branches) + 1}")[:80],
+                    "label": str(branch.get("label") or f"Branch {len(branches) + 1}")[:80],
+                    "steps": clean_automation_actions(branch.get("steps", []), depth + 1),
+                })
+        if branches:
+            clean_action["branches"] = branches[:10]
+        actions.append(clean_action)
+    return actions
 
 
 def automation_shape(item):
@@ -836,17 +880,7 @@ def clean_automation(data, current=None):
         filters = trigger.get("filters", {}) if isinstance(trigger.get("filters", {}), dict) else {}
         clean_filters = {str(k).strip()[:80]: str(v).strip()[:200] for k, v in filters.items() if str(k).strip()}
         triggers.append({"type": trigger_type, "filters": clean_filters})
-    actions = []
-    for index, action in enumerate(data.get("actions", current.get("actions", []) if current else []) or []):
-        action_type = str(action.get("type", "")).strip()
-        if action_type not in VALID_AUTOMATION_ACTIONS:
-            raise ValueError("Automation action is not supported.")
-        config = action.get("config", {}) if isinstance(action.get("config", {}), dict) else {}
-        actions.append({
-            "id": str(action.get("id") or f"action-{index + 1}")[:80],
-            "type": action_type,
-            "config": {str(k).strip()[:80]: str(v).strip()[:1000] for k, v in config.items() if str(k).strip()},
-        })
+    actions = clean_automation_actions(data.get("actions", current.get("actions", []) if current else []) or [])
     if not actions:
         raise ValueError("At least one automation action is required.")
     return {

@@ -141,6 +141,9 @@ export type AutomationAction = {
   id: string;
   type: string;
   config: Record<string, string>;
+  then?: AutomationAction[];
+  else?: AutomationAction[];
+  branches?: Array<{ id: string; label: string; steps: AutomationAction[] }>;
 };
 
 export type AutomationRule = {

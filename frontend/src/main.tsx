@@ -69,6 +69,7 @@ const emptyOpportunity = { title: "", value: 0, currency: "AUD", contactId: "", 
 const automationTriggerOptions = [
   { value: "AppointmentBooked", label: "Appointment booked", module: "Scheduling" },
   { value: "BookingCancelled", label: "Booking cancelled", module: "Scheduling" },
+  { value: "AppointmentStartsSoon", label: "Appointment starts soon", module: "Scheduling" },
   { value: "AppointmentTypeCreated", label: "Appointment type created", module: "Scheduling" },
   { value: "AvailabilityChanged", label: "Availability changed", module: "Scheduling" },
   { value: "ContactCreated", label: "Contact created", module: "Contacts" },
@@ -79,6 +80,8 @@ const automationTriggerOptions = [
   { value: "OpportunityMoved", label: "Opportunity moved", module: "Opportunities" },
   { value: "PipelineCreated", label: "Pipeline created", module: "Opportunities" },
   { value: "AutomationStarted", label: "Automation started", module: "Automations" },
+  { value: "ExternalWebhook", label: "External webhook received", module: "Automations" },
+  { value: "RecurringSchedule", label: "Recurring schedule", module: "Automations" },
   { value: "SitePageCreated", label: "Site page created", module: "Sites" },
   { value: "SitePagePublished", label: "Site page published", module: "Sites" },
   { value: "SitePageVisited", label: "Site page visited", module: "Sites" },
@@ -91,6 +94,11 @@ const automationActionOptions = [
   { value: "SendEmail", label: "Send email" },
   { value: "InternalNotification", label: "Internal notification" },
   { value: "Webhook", label: "Webhook" },
+  { value: "CallExternalApi", label: "Call external API" },
+  { value: "CreateOpportunity", label: "Create opportunity" },
+  { value: "MoveOpportunity", label: "Move opportunity" },
+  { value: "TriggerEvent", label: "Trigger event" },
+  { value: "SetData", label: "Set workflow data" },
   { value: "IfElse", label: "If / else condition" },
   { value: "Wait", label: "Wait" },
   { value: "Branch", label: "Branch" },
@@ -98,13 +106,35 @@ const automationActionOptions = [
   { value: "StartAutomation", label: "Start another automation" },
   { value: "StopAutomation", label: "Stop automation" }
 ];
-const emptyAutomation = {
+
+type AutomationFormAction = {
+  id: string;
+  type: string;
+  configText: string;
+  then?: AutomationFormAction[];
+  else?: AutomationFormAction[];
+  branches?: Array<{ id: string; label: string; steps: AutomationFormAction[] }>;
+};
+
+type AutomationForm = {
+  name: string;
+  description: string;
+  triggers: Array<{ id: string; type: string; filterKey: string; filterValue: string }>;
+  actions: AutomationFormAction[];
+  isActive: boolean;
+};
+
+const emptyAutomation: AutomationForm = {
   name: "",
   description: "",
   triggers: [{ id: "trigger-1", type: "AppointmentBooked", filterKey: "", filterValue: "" }],
   actions: [
-    { id: "action-1", type: "IfElse", configText: "condition=contact has tag new-client\ntrueLabel=Yes\nfalseLabel=No" },
-    { id: "action-2", type: "CreateTask", configText: "title=Follow up with contact\ndueInDays=1" }
+    { id: "action-1", type: "SendEmail", configText: "to={{contact.email}}\nsubject=Appointment confirmed: {{appointment.name}}\nbody=Hi {{contact.firstName}}, your appointment is booked for {{appointment.startAt}}." },
+    { id: "action-2", type: "CreateOpportunity", configText: "pipelineId={{defaultPipeline.id}}\nstageId={{defaultStage.id}}\ntitle={{appointment.name}} - {{contact.fullName}}\nvalue=0\nsource=Appointment" },
+    { id: "action-3", type: "Wait", configText: "until={{appointment.startAt}}\noffsetHours=-24" },
+    { id: "action-4", type: "SendEmail", configText: "to={{contact.email}}\nsubject=Reminder: appointment tomorrow\nbody=We will see you at {{appointment.startAt}}." },
+    { id: "action-5", type: "Wait", configText: "until={{appointment.startAt}}\noffsetMinutes=-10" },
+    { id: "action-6", type: "SendEmail", configText: "to={{contact.email}}\nsubject=Starting soon\nbody=Your appointment starts in 10 minutes." }
   ],
   isActive: true
 };
@@ -507,17 +537,106 @@ function AdminApp() {
     return Object.entries(config ?? {}).map(([key, value]) => `${key}=${value}`).join("\n");
   }
 
-  function addAutomationAction() {
-    addAutomationActionAfter(automationForm.actions.length - 1);
+  function newAutomationAction(type = "InternalNotification"): AutomationFormAction {
+    const templates: Record<string, string> = {
+      SendEmail: "to={{contact.email}}\nsubject=Your appointment details\nbody=Hi {{contact.firstName}}, your appointment is {{appointment.startAt}}.",
+      CreateOpportunity: "pipelineId={{defaultPipeline.id}}\nstageId={{defaultStage.id}}\ntitle={{appointment.name}} - {{contact.fullName}}\nvalue=0\nsource=Automation",
+      MoveOpportunity: "opportunityId={{opportunity.id}}\nstageId={{stage.id}}",
+      Wait: "duration=1\nunit=hours\nuntil=\noffsetMinutes=",
+      CallExternalApi: "method=POST\nurl=https://example.com/webhook\nheaders.Authorization=Bearer token\nbody={\"contactId\":\"{{contact.id}}\",\"appointmentId\":\"{{appointment.id}}\"}",
+      Webhook: "url=https://example.com/webhook\nmethod=POST",
+      TriggerEvent: "eventName=CustomEvent\npayload.contactId={{contact.id}}",
+      SetData: "key=appointmentSummary\nvalue={{appointment.name}} for {{contact.fullName}}",
+      IfElse: "condition={{contact.tags}} contains vip\ntrueLabel=VIP\nfalseLabel=Standard",
+      CreateTask: "title=Follow up with {{contact.fullName}}\ndueInDays=1",
+      InternalNotification: "message=New automation event for {{contact.fullName}}"
+    };
+    return { id: `action-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`, type, configText: templates[type] ?? "key=value" };
   }
 
-  function addAutomationActionAfter(index: number) {
-    const nextAction = { id: `action-${Date.now()}`, type: "InternalNotification", configText: "message=New automation event" };
-    const nextActions = [...automationForm.actions];
-    nextActions.splice(index + 1, 0, nextAction);
+  function mapAutomationActionToForm(action: AutomationAction): AutomationFormAction {
+    return {
+      id: action.id,
+      type: action.type,
+      configText: serializeActionConfig(action.config),
+      then: action.then?.map(mapAutomationActionToForm),
+      else: action.else?.map(mapAutomationActionToForm),
+      branches: action.branches?.map((branch) => ({ id: branch.id, label: branch.label, steps: branch.steps.map(mapAutomationActionToForm) }))
+    };
+  }
+
+  function mapAutomationActionToApi(action: AutomationFormAction, index: number): AutomationAction {
+    return {
+      id: action.id || `action-${index + 1}`,
+      type: action.type,
+      config: parseActionConfig(action.configText),
+      then: action.then?.map(mapAutomationActionToApi),
+      else: action.else?.map(mapAutomationActionToApi),
+      branches: action.branches?.map((branch) => ({ id: branch.id, label: branch.label, steps: branch.steps.map(mapAutomationActionToApi) }))
+    };
+  }
+
+  function updateAutomationActions(actions: AutomationFormAction[], id: string, patch: Partial<AutomationFormAction>): AutomationFormAction[] {
+    return actions.map((action) => {
+      const updated = action.id === id ? { ...action, ...patch } : action;
+      return {
+        ...updated,
+        then: updated.then ? updateAutomationActions(updated.then, id, patch) : updated.then,
+        else: updated.else ? updateAutomationActions(updated.else, id, patch) : updated.else,
+        branches: updated.branches?.map((branch) => ({ ...branch, steps: updateAutomationActions(branch.steps, id, patch) }))
+      };
+    });
+  }
+
+  function insertAutomationActionAfter(actions: AutomationFormAction[], id: string, nextAction: AutomationFormAction): AutomationFormAction[] {
+    const result: AutomationFormAction[] = [];
+    for (const action of actions) {
+      result.push({
+        ...action,
+        then: action.then ? insertAutomationActionAfter(action.then, id, nextAction) : action.then,
+        else: action.else ? insertAutomationActionAfter(action.else, id, nextAction) : action.else,
+        branches: action.branches?.map((branch) => ({ ...branch, steps: insertAutomationActionAfter(branch.steps, id, nextAction) }))
+      });
+      if (action.id === id) result.push(nextAction);
+    }
+    return result;
+  }
+
+  function removeAutomationActionById(actions: AutomationFormAction[], id: string): AutomationFormAction[] {
+    return actions.filter((action) => action.id !== id).map((action) => ({
+      ...action,
+      then: action.then ? removeAutomationActionById(action.then, id) : action.then,
+      else: action.else ? removeAutomationActionById(action.else, id) : action.else,
+      branches: action.branches?.map((branch) => ({ ...branch, steps: removeAutomationActionById(branch.steps, id) }))
+    }));
+  }
+
+  function addNestedAutomationAction(parentId: string, branch: "then" | "else", type = "SendEmail") {
     setAutomationForm({
       ...automationForm,
-      actions: nextActions
+      actions: updateAutomationActions(automationForm.actions, parentId, {
+        [branch]: [...(findAutomationAction(automationForm.actions, parentId)?.[branch] ?? []), newAutomationAction(type)]
+      } as Partial<AutomationFormAction>)
+    });
+  }
+
+  function findAutomationAction(actions: AutomationFormAction[], id: string): AutomationFormAction | undefined {
+    for (const action of actions) {
+      if (action.id === id) return action;
+      const nested = findAutomationAction([...(action.then ?? []), ...(action.else ?? []), ...(action.branches ?? []).flatMap((branch) => branch.steps)], id);
+      if (nested) return nested;
+    }
+    return undefined;
+  }
+
+  function addAutomationAction() {
+    setAutomationForm({ ...automationForm, actions: [...automationForm.actions, newAutomationAction()] });
+  }
+
+  function addAutomationActionAfter(id: string) {
+    setAutomationForm({
+      ...automationForm,
+      actions: insertAutomationActionAfter(automationForm.actions, id, newAutomationAction())
     });
   }
 
@@ -533,7 +652,7 @@ function AdminApp() {
   }
 
   function updateAutomationAction(id: string, patch: Partial<(typeof automationForm.actions)[number]>) {
-    setAutomationForm({ ...automationForm, actions: automationForm.actions.map((action) => action.id === id ? { ...action, ...patch } : action) });
+    setAutomationForm({ ...automationForm, actions: updateAutomationActions(automationForm.actions, id, patch) });
   }
 
   function editAutomation(rule: AutomationRule) {
@@ -546,7 +665,7 @@ function AdminApp() {
       name: rule.name,
       description: rule.description ?? "",
       triggers,
-      actions: rule.actions.map((action) => ({ id: action.id, type: action.type, configText: serializeActionConfig(action.config) })),
+      actions: rule.actions.map(mapAutomationActionToForm),
       isActive: rule.isActive
     });
     setActiveTab("automations");
@@ -558,11 +677,7 @@ function AdminApp() {
       setMessage("Automation name and at least one action are required.");
       return;
     }
-    const actions: AutomationAction[] = automationForm.actions.map((action, index) => ({
-      id: action.id || `action-${index + 1}`,
-      type: action.type,
-      config: parseActionConfig(action.configText)
-    }));
+    const actions: AutomationAction[] = automationForm.actions.map(mapAutomationActionToApi);
     const triggers = automationForm.triggers.map((trigger) => ({
       type: trigger.type,
       filters: trigger.filterKey.trim() ? { [trigger.filterKey.trim()]: trigger.filterValue.trim() } : {}
@@ -1199,8 +1314,9 @@ function AdminApp() {
                 onUpdateTrigger={updateAutomationTrigger}
                 onRemoveTrigger={(id) => setAutomationForm({ ...automationForm, triggers: automationForm.triggers.filter((item) => item.id !== id) })}
                 onAddActionAfter={addAutomationActionAfter}
+                onAddNestedAction={addNestedAutomationAction}
                 onUpdateAction={updateAutomationAction}
-                onRemoveAction={(id) => setAutomationForm({ ...automationForm, actions: automationForm.actions.filter((item) => item.id !== id) })}
+                onRemoveAction={(id) => setAutomationForm({ ...automationForm, actions: removeAutomationActionById(automationForm.actions, id) })}
               />
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Automation name" value={automationForm.name} onChange={(value) => setAutomationForm({ ...automationForm, name: value })} />
@@ -1243,7 +1359,7 @@ function AdminApp() {
                   <div key={action.id} className="rounded-md border border-[#dde3ec] bg-white p-3">
                     <div className="mb-3 flex items-center justify-between gap-2">
                       <div className="text-sm font-bold">Action {index + 1}</div>
-                      {automationForm.actions.length > 1 && <button className="rounded-md border border-rose-200 p-2 text-rose-700" onClick={() => setAutomationForm({ ...automationForm, actions: automationForm.actions.filter((item) => item.id !== action.id) })}><Trash2 size={15} /></button>}
+                      {automationForm.actions.length > 1 && <button className="rounded-md border border-rose-200 p-2 text-rose-700" onClick={() => setAutomationForm({ ...automationForm, actions: removeAutomationActionById(automationForm.actions, action.id) })}><Trash2 size={15} /></button>}
                     </div>
                     <label className="text-sm font-bold text-[#334155]">Action type
                       <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={action.type} onChange={(event) => updateAutomationAction(action.id, { type: event.target.value })}>
@@ -1251,6 +1367,10 @@ function AdminApp() {
                       </select>
                     </label>
                     <textarea className="mt-3 min-h-20 w-full rounded-md border border-[#cbd5e1] bg-white p-3 font-mono text-xs" placeholder={"key=value\nanotherKey=value"} value={action.configText} onChange={(event) => updateAutomationAction(action.id, { configText: event.target.value })} />
+                    {(action.type === "IfElse" || (action.then?.length || action.else?.length)) && <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <NestedActionList title="Then / yes path" actions={action.then ?? []} onAdd={() => addNestedAutomationAction(action.id, "then")} onUpdate={updateAutomationAction} onRemove={(id) => setAutomationForm({ ...automationForm, actions: removeAutomationActionById(automationForm.actions, id) })} />
+                      <NestedActionList title="Else / no path" actions={action.else ?? []} onAdd={() => addNestedAutomationAction(action.id, "else")} onUpdate={updateAutomationAction} onRemove={(id) => setAutomationForm({ ...automationForm, actions: removeAutomationActionById(automationForm.actions, id) })} />
+                    </div>}
                   </div>
                 ))}
               </div>
@@ -1278,7 +1398,7 @@ function AdminApp() {
                             const filterEntries = Object.entries(trigger.filters ?? {});
                             return { id: `trigger-${index}`, type: trigger.type, filterKey: filterEntries[0]?.[0] ?? "", filterValue: filterEntries[0]?.[1] ?? "" };
                           })}
-                          actions={rule.actions.map((action) => ({ id: action.id, type: action.type, configText: serializeActionConfig(action.config) }))}
+                          actions={rule.actions.map(mapAutomationActionToForm)}
                           isActive={rule.isActive}
                           compact
                         />
@@ -1908,18 +2028,20 @@ function AutomationCanvas({
   onUpdateTrigger,
   onRemoveTrigger,
   onAddActionAfter,
+  onAddNestedAction,
   onUpdateAction,
   onRemoveAction
 }: {
   title: string;
   triggers: Array<{ id: string; type: string; filterKey?: string; filterValue?: string }>;
-  actions: Array<{ id: string; type: string; configText?: string }>;
+  actions: AutomationFormAction[];
   isActive: boolean;
   compact?: boolean;
   onAddTrigger?: () => void;
   onUpdateTrigger?: (id: string, patch: { type?: string; filterKey?: string; filterValue?: string }) => void;
   onRemoveTrigger?: (id: string) => void;
-  onAddActionAfter?: (index: number) => void;
+  onAddActionAfter?: (id: string) => void;
+  onAddNestedAction?: (id: string, branch: "then" | "else") => void;
   onUpdateAction?: (id: string, patch: { type?: string; configText?: string }) => void;
   onRemoveAction?: (id: string) => void;
 }) {
@@ -1950,32 +2072,106 @@ function AutomationCanvas({
           ))}
         </div>
         {editable && <button className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#bfdbfe] bg-white px-3 py-2 text-xs font-black text-[#174ea6]" onClick={onAddTrigger}><Plus size={14} /> Add start trigger</button>}
-        {visibleActions.map((action, index) => {
-          const actionLabel = automationActionOptions.find((item) => item.value === action.type)?.label ?? (action.type || "No action selected");
-          return (
+        <AutomationStepTree
+          actions={visibleActions}
+          compact={compact}
+          editable={editable}
+          canRemoveRoot={actions.length > 1}
+          onAddActionAfter={onAddActionAfter}
+          onAddNestedAction={onAddNestedAction}
+          onUpdateAction={onUpdateAction}
+          onRemoveAction={onRemoveAction}
+        />
+      </div>
+    </div>
+  );
+}
+
+function AutomationStepTree({
+  actions,
+  compact,
+  editable,
+  canRemoveRoot,
+  depth = 0,
+  onAddActionAfter,
+  onAddNestedAction,
+  onUpdateAction,
+  onRemoveAction
+}: {
+  actions: AutomationFormAction[];
+  compact: boolean;
+  editable: boolean;
+  canRemoveRoot: boolean;
+  depth?: number;
+  onAddActionAfter?: (id: string) => void;
+  onAddNestedAction?: (id: string, branch: "then" | "else") => void;
+  onUpdateAction?: (id: string, patch: { type?: string; configText?: string }) => void;
+  onRemoveAction?: (id: string) => void;
+}) {
+  return (
+    <>
+      {actions.map((action, index) => {
+        const actionLabel = automationActionOptions.find((item) => item.value === action.type)?.label ?? (action.type || "No action selected");
+        const hasBranches = action.type === "IfElse" || (action.then?.length || action.else?.length);
+        return (
           <React.Fragment key={action.id}>
             <DiagramArrow vertical />
-            <DiagramNode
-              label={`Action ${index + 1}`}
-              type={action.type}
-              configText={action.configText}
-              value={actionLabel}
-              tone={action.type === "IfElse" ? "yellow" : index % 2 === 0 ? "green" : "pink"}
-              kind="action"
-              compact={compact}
-              canRemove={actions.length > 1}
-              onChange={(patch) => onUpdateAction?.(action.id, patch)}
-              onRemove={() => onRemoveAction?.(action.id)}
-            />
-            {action.type === "IfElse" && (
-              <div className="grid w-full gap-3 sm:grid-cols-2">
-                <div className="rounded-md border border-[#bbf7d0] bg-white p-3 text-center text-xs font-black text-[#137333]">YES branch continues</div>
-                <div className="rounded-md border border-[#fbcfe8] bg-white p-3 text-center text-xs font-black text-[#9d174d]">NO branch continues</div>
-              </div>
-            )}
-            {editable && <button className="mt-2 inline-flex items-center gap-2 rounded-full border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-black text-[#334155]" onClick={() => onAddActionAfter?.(index)}><Plus size={14} /> Add next step</button>}
+            <div className={`${depth ? "w-[92%]" : "w-full"} flex flex-col items-center`}>
+              <DiagramNode
+                label={`${depth ? "Nested " : ""}Step ${index + 1}`}
+                type={action.type}
+                configText={action.configText}
+                value={actionLabel}
+                tone={action.type === "IfElse" ? "yellow" : action.type === "Wait" ? "blue" : index % 2 === 0 ? "green" : "pink"}
+                kind="action"
+                compact={compact}
+                canRemove={canRemoveRoot || depth > 0}
+                onChange={(patch) => onUpdateAction?.(action.id, patch)}
+                onRemove={() => onRemoveAction?.(action.id)}
+              />
+              {hasBranches && (
+                <div className="mt-3 grid w-full gap-3 sm:grid-cols-2">
+                  <div className="rounded-md border border-[#bbf7d0] bg-white p-3">
+                    <div className="mb-2 text-center text-xs font-black text-[#137333]">THEN / YES</div>
+                    {(action.then ?? []).length > 0 ? <AutomationStepTree actions={action.then ?? []} compact={compact} editable={editable} canRemoveRoot depth={depth + 1} onAddActionAfter={onAddActionAfter} onAddNestedAction={onAddNestedAction} onUpdateAction={onUpdateAction} onRemoveAction={onRemoveAction} /> : <div className="text-center text-xs font-bold text-[#64748b]">No steps yet</div>}
+                    {editable && <button className="mt-2 w-full rounded-md border border-[#bbf7d0] bg-[#edf8f1] px-2 py-2 text-xs font-black text-[#137333]" onClick={() => onAddNestedAction?.(action.id, "then")}>Add yes step</button>}
+                  </div>
+                  <div className="rounded-md border border-[#fbcfe8] bg-white p-3">
+                    <div className="mb-2 text-center text-xs font-black text-[#9d174d]">ELSE / NO</div>
+                    {(action.else ?? []).length > 0 ? <AutomationStepTree actions={action.else ?? []} compact={compact} editable={editable} canRemoveRoot depth={depth + 1} onAddActionAfter={onAddActionAfter} onAddNestedAction={onAddNestedAction} onUpdateAction={onUpdateAction} onRemoveAction={onRemoveAction} /> : <div className="text-center text-xs font-bold text-[#64748b]">No steps yet</div>}
+                    {editable && <button className="mt-2 w-full rounded-md border border-[#fbcfe8] bg-[#fff1f8] px-2 py-2 text-xs font-black text-[#9d174d]" onClick={() => onAddNestedAction?.(action.id, "else")}>Add no step</button>}
+                  </div>
+                </div>
+              )}
+            </div>
+            {editable && <button className="mt-2 inline-flex items-center gap-2 rounded-full border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-black text-[#334155]" onClick={() => onAddActionAfter?.(action.id)}><Plus size={14} /> Add next step</button>}
           </React.Fragment>
-        );})}
+        );
+      })}
+    </>
+  );
+}
+
+function NestedActionList({ title, actions, onAdd, onUpdate, onRemove }: { title: string; actions: AutomationFormAction[]; onAdd: () => void; onUpdate: (id: string, patch: Partial<AutomationFormAction>) => void; onRemove: (id: string) => void }) {
+  return (
+    <div className="rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-xs font-black uppercase tracking-wide text-[#334155]">{title}</div>
+        <button className="rounded-md border border-[#cbd5e1] bg-white px-2 py-1 text-xs font-black" onClick={onAdd}>Add</button>
+      </div>
+      <div className="space-y-2">
+        {actions.length === 0 && <div className="rounded-md border border-dashed border-[#cbd5e1] p-3 text-xs font-bold text-[#64748b]">No nested steps yet.</div>}
+        {actions.map((action) => (
+          <div key={action.id} className="rounded-md border border-[#dde3ec] bg-white p-2">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <select className="w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-xs font-bold" value={action.type} onChange={(event) => onUpdate(action.id, { type: event.target.value })}>
+                {automationActionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <button className="rounded-md border border-rose-200 p-2 text-rose-700" onClick={() => onRemove(action.id)}><Trash2 size={13} /></button>
+            </div>
+            <textarea className="min-h-16 w-full rounded-md border border-[#cbd5e1] bg-white p-2 font-mono text-xs" value={action.configText} onChange={(event) => onUpdate(action.id, { configText: event.target.value })} />
+          </div>
+        ))}
       </div>
     </div>
   );
