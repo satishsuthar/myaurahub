@@ -191,9 +191,19 @@ const roleTemplates: Record<string, Record<string, boolean>> = {
 };
 const emptyTeamUser = { firstName: "", lastName: "", email: "", password: "", role: "Staff", permissions: roleTemplates.Staff, status: "Active" as "Active" | "Inactive" };
 const emptyRole = { name: "", description: "", permissions: roleTemplates.Staff };
-const emptySubAccount = { name: "", slug: "", ownerEmail: "", status: "Active" as "Active" | "Inactive" };
+type SubAccountForm = {
+  name: string;
+  slug: string;
+  ownerEmail: string;
+  accessEmail: string;
+  accessRole: string;
+  status: "Active" | "Inactive";
+  members: NonNullable<SubAccount["members"]>;
+};
+const emptySubAccount: SubAccountForm = { name: "", slug: "", ownerEmail: "", accessEmail: "", accessRole: "Admin", status: "Active", members: [] };
 const emptyMarketingAccount = { provider: "Meta", accountName: "", accountId: "", status: "NeedsAuth" as "Connected" | "NeedsAuth" | "Disabled" };
 const emptyCampaign = { name: "", channel: "Social", status: "Draft" as MarketingCampaign["status"], objective: "", audience: "", content: "", scheduledAt: "", accountIds: [] as string[], trackingCode: "" };
+const activeSubAccountKey = "calbook.activeSubAccountId";
 
 function Router() {
   const pathParts = window.location.pathname.split("/").filter(Boolean);
@@ -267,6 +277,8 @@ function AdminApp() {
   const [durationUnit, setDurationUnit] = useState<"minutes" | "hours">("minutes");
   const [intervalUnit, setIntervalUnit] = useState<"minutes" | "hours">("minutes");
   const [noticeUnit, setNoticeUnit] = useState<"minutes" | "hours">("hours");
+  const [activeSubAccountId, setActiveSubAccountId] = useState(() => localStorage.getItem(activeSubAccountKey) ?? "agency");
+  const activeSubAccount = subAccounts.find((account) => account.id === activeSubAccountId);
 
   if (!authUser) {
     return <AuthPage onAuthenticated={setAuthUser} />;
@@ -306,6 +318,11 @@ function AdminApp() {
     setWorkspaceUsers(userData);
     setWorkspaceRoles(roleData);
     setSubAccounts(subAccountData);
+    setActiveSubAccountId((current) => {
+      const next = current === "agency" || subAccountData.some((account) => account.id === current) ? current : "agency";
+      localStorage.setItem(activeSubAccountKey, next);
+      return next;
+    });
     setWhiteLabel({ ...{ brandName: authUser?.workspaceName ?? "", supportEmail: "", customDomain: "", logoUrl: "", agencyMode: true, resellerName: "", hidePoweredBy: false }, ...whiteLabelData });
     setMarketingAccounts(marketingAccountData);
     setMarketingCampaigns(campaignData);
@@ -499,15 +516,22 @@ function AdminApp() {
       setMessage("Subaccount name is required.");
       return;
     }
+    const members = [...subAccountForm.members];
+    const accessEmail = subAccountForm.accessEmail.trim().toLowerCase();
+    if (accessEmail && !members.some((member) => member.email.toLowerCase() === accessEmail)) {
+      members.push({ userId: "", email: accessEmail, role: subAccountForm.accessRole, permissions: roleTemplates[subAccountForm.accessRole] ?? roleTemplates.Staff });
+    }
     const saved = await api<SubAccount>(editingSubAccountId ? `/api/workspace/subaccounts/${editingSubAccountId}` : "/api/workspace/subaccounts", {
       method: editingSubAccountId ? "PUT" : "POST",
-      body: JSON.stringify({ ...subAccountForm, slug: subAccountForm.slug || slugifyLocal(subAccountForm.name) })
+      body: JSON.stringify({ ...subAccountForm, members, slug: subAccountForm.slug || slugifyLocal(subAccountForm.name) })
     });
     setSubAccounts(editingSubAccountId ? subAccounts.map((item) => item.id === saved.id ? saved : item) : [...subAccounts, saved]);
+    setActiveSubAccountId(saved.id);
+    localStorage.setItem(activeSubAccountKey, saved.id);
     setSubAccountForm(emptySubAccount);
     setEditingSubAccountId(null);
     setMessageTone("success");
-    setMessage("Subaccount saved.");
+    setMessage("Subaccount saved and selected.");
   }
 
   async function saveMarketingAccount() {
@@ -1119,6 +1143,17 @@ function AdminApp() {
               <h1 className="display-font text-xl font-bold">{activeTab === "contacts" ? "Contacts" : activeTab === "opportunities" ? "Opportunities" : activeTab === "automations" ? "Automations" : activeTab === "sites" ? "Sites" : activeTab === "marketing" ? "Marketing" : activeTab === "team" ? "My Team" : activeTab === "settings" ? "App Settings" : activeTab === "profile" ? "My Profile" : "Scheduling"}</h1>
               <p className="text-xs font-medium text-[#64748b]">{activeTab === "contacts" ? "Contacts, custom fields, tasks, and activity timeline." : activeTab === "opportunities" ? "Pipelines, stages, deals, and revenue tracking." : activeTab === "automations" ? "Workflow rules that react to bookings, contacts, pages, tasks, and opportunities." : activeTab === "sites" ? "Landing pages, mini-sites, and WYSIWYG page editing." : activeTab === "marketing" ? "Campaigns, connected ad/social accounts, schedules, and tracking." : activeTab === "team" ? "Users, custom roles, permissions, and agency subaccounts." : activeTab === "settings" ? "Workspace-wide branding and application settings." : activeTab === "profile" ? "Your login and workspace access details." : "Appointment types, availability, bookings, and scheduling settings."}</p>
             </div>
+            <label className="hidden min-w-[260px] text-xs font-black uppercase tracking-wide text-[#64748b] md:block">
+              Active subaccount
+              <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm font-bold normal-case tracking-normal text-[#16202a]" value={activeSubAccountId} onChange={(event) => {
+                setActiveSubAccountId(event.target.value);
+                localStorage.setItem(activeSubAccountKey, event.target.value);
+              }}>
+                <option value="agency">Agency workspace</option>
+                {subAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+              </select>
+              <span className="mt-1 block text-[11px] font-semibold normal-case tracking-normal text-[#94a3b8]">{activeSubAccount ? `/${activeSubAccount.slug}` : `/${authUser.workspaceSlug}`}</span>
+            </label>
           </div>
         </header>
 
@@ -1990,13 +2025,50 @@ function AdminApp() {
             <Panel title="Subaccounts" icon={<Users size={18} />}>
               <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
                 <div className="rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
+                  <div className="mb-4 rounded-md border border-[#c7d2fe] bg-[#eef5ff] p-3 text-sm text-[#174ea6]">
+                    Subaccounts are client/business contexts. A person can belong to any number of them and switch the active context from the top bar.
+                  </div>
                   <Field label="Subaccount name" value={subAccountForm.name} onChange={(value) => setSubAccountForm({ ...subAccountForm, name: value, slug: editingSubAccountId ? subAccountForm.slug : slugifyLocal(value) })} />
                   <Field label="Slug" value={subAccountForm.slug} onChange={(value) => setSubAccountForm({ ...subAccountForm, slug: slugifyLocal(value) })} />
                   <Field label="Owner email" value={subAccountForm.ownerEmail} onChange={(value) => setSubAccountForm({ ...subAccountForm, ownerEmail: value })} />
+                  <div className="mt-3 grid gap-3 md:grid-cols-[1fr_150px]">
+                    <Field label="Grant access to email" value={subAccountForm.accessEmail} onChange={(value) => setSubAccountForm({ ...subAccountForm, accessEmail: value })} />
+                    <label className="block text-sm">
+                      <span className="mb-1 block font-semibold text-[#475569]">Role</span>
+                      <select className="w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={subAccountForm.accessRole} onChange={(event) => setSubAccountForm({ ...subAccountForm, accessRole: event.target.value })}>
+                        {Object.keys(roleTemplates).map((role) => <option key={role}>{role}</option>)}
+                      </select>
+                    </label>
+                  </div>
                   <label className="mt-3 block text-sm font-bold text-[#334155]">Status<select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={subAccountForm.status} onChange={(event) => setSubAccountForm({ ...subAccountForm, status: event.target.value as "Active" | "Inactive" })}><option>Active</option><option>Inactive</option></select></label>
-                  <button className="mt-4 inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveSubAccount}><Save size={16} /> Save subaccount</button>
+                  {subAccountForm.members.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{subAccountForm.members.map((member) => <span key={member.email} className="rounded-full bg-white px-3 py-1 text-xs font-black text-[#334155] ring-1 ring-[#dde3ec]">{member.email} - {member.role}</span>)}</div>}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveSubAccount}><Save size={16} /> Save subaccount</button>
+                    {editingSubAccountId && <button className="rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" onClick={() => { setEditingSubAccountId(null); setSubAccountForm(emptySubAccount); }}>New</button>}
+                  </div>
                 </div>
-                <div className="space-y-2">{subAccounts.map((account) => <button key={account.id} className="w-full rounded-md border border-[#dde3ec] bg-white p-3 text-left" onClick={() => { setEditingSubAccountId(account.id); setSubAccountForm({ name: account.name, slug: account.slug, ownerEmail: account.ownerEmail ?? "", status: account.status }); }}><div className="font-black">{account.name}</div><div className="text-sm text-[#64748b]">/{account.slug} - {account.status}</div><div className="mt-1 text-xs text-[#64748b]">Owner: {account.ownerEmail || "Unassigned"}</div></button>)}</div>
+                <div className="space-y-2">
+                  <div className={`rounded-md border p-3 ${activeSubAccountId === "agency" ? "border-[var(--theme-primary)] bg-[#eef5ff]" : "border-[#dde3ec] bg-white"}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div><div className="font-black">Agency workspace</div><div className="text-sm text-[#64748b]">/{authUser.workspaceSlug} - all agency-level modules</div></div>
+                      <button className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold" onClick={() => { setActiveSubAccountId("agency"); localStorage.setItem(activeSubAccountKey, "agency"); }}>Switch</button>
+                    </div>
+                  </div>
+                  {subAccounts.map((account) => <div key={account.id} className={`rounded-md border p-3 ${activeSubAccountId === account.id ? "border-[var(--theme-primary)] bg-[#eef5ff]" : "border-[#dde3ec] bg-white"}`}>
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <div className="font-black">{account.name}</div>
+                        <div className="text-sm text-[#64748b]">/{account.slug} - {account.status}</div>
+                        <div className="mt-1 text-xs text-[#64748b]">Owner: {account.ownerEmail || "Unassigned"}</div>
+                        <div className="mt-2 flex flex-wrap gap-1.5">{(account.members ?? []).map((member) => <span key={member.email} className="rounded-full bg-[#f8fafc] px-2 py-1 text-[11px] font-black text-[#475569] ring-1 ring-[#dde3ec]">{member.email} - {member.role}</span>)}</div>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        <button className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold" onClick={() => { setActiveSubAccountId(account.id); localStorage.setItem(activeSubAccountKey, account.id); }}>Switch</button>
+                        <button className="rounded-md bg-[var(--theme-primary)] px-3 py-2 text-sm font-bold text-white" onClick={() => { setEditingSubAccountId(account.id); setSubAccountForm({ name: account.name, slug: account.slug, ownerEmail: account.ownerEmail ?? "", accessEmail: "", accessRole: "Admin", status: account.status, members: account.members ?? [] }); }}>Edit access</button>
+                      </div>
+                    </div>
+                  </div>)}
+                </div>
               </div>
             </Panel>
           </section>}

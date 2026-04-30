@@ -1299,10 +1299,49 @@ def subaccount_shape(item):
     return {k: item.get(k) for k in ["id", "name", "slug", "status", "ownerEmail", "members", "createdAtUtc", "updatedAtUtc"]}
 
 
+def can_access_subaccount(context, item):
+    if context.get("role") in {"Owner", "Admin"} or context.get("permissions", {}).get("team"):
+        return True
+    email = context.get("email", "").lower()
+    if item.get("ownerEmail", "").lower() == email:
+        return True
+    return any(member.get("email", "").lower() == email for member in item.get("members", []))
+
+
 def list_subaccounts(context):
-    require_workspace_admin(context)
     result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(context["workspaceSlug"])) & Key("sk").begins_with("SUBACCOUNT#"))
-    return sorted([subaccount_shape(item) for item in result.get("Items", [])], key=lambda item: item.get("createdAtUtc", ""))
+    items = [item for item in result.get("Items", []) if item.get("status", "Active") == "Active" or can_access_subaccount(context, item)]
+    return sorted([subaccount_shape(item) for item in items if can_access_subaccount(context, item)], key=lambda item: item.get("createdAtUtc", ""))
+
+
+def clean_subaccount_member(member, fallback_role="Staff"):
+    if not isinstance(member, dict):
+        return None
+    email = normalize_email(str(member.get("email", "")))
+    if not email:
+        return None
+    role = member.get("role") if member.get("role") in DEFAULT_ROLE_PERMISSIONS else fallback_role
+    permissions = member.get("permissions") if isinstance(member.get("permissions"), dict) else DEFAULT_ROLE_PERMISSIONS.get(role, DEFAULT_ROLE_PERMISSIONS["Staff"])
+    return {"userId": str(member.get("userId", ""))[:80], "email": email, "role": role, "permissions": permissions}
+
+
+def clean_subaccount_members(data, owner_email, current=None):
+    raw_members = data.get("members", current.get("members", []) if current else [])
+    members = []
+    seen = set()
+
+    def add(member):
+        clean = clean_subaccount_member(member)
+        if clean and clean["email"] not in seen:
+            seen.add(clean["email"])
+            members.append(clean)
+
+    if owner_email:
+        add({"email": owner_email, "role": "Owner", "permissions": DEFAULT_ROLE_PERMISSIONS["Owner"]})
+    if isinstance(raw_members, list):
+        for member in raw_members:
+            add(member)
+    return members
 
 
 def clean_subaccount(data, current=None):
@@ -1311,7 +1350,8 @@ def clean_subaccount(data, current=None):
         raise ValueError("Subaccount name is required.")
     slug = slugify(str(data.get("slug", current.get("slug", name) if current else name)))
     status = data.get("status", current.get("status", "Active") if current else "Active")
-    return {"name": name[:120], "slug": slug, "status": status if status in {"Active", "Inactive"} else "Active", "ownerEmail": normalize_email(str(data.get("ownerEmail", current.get("ownerEmail", "") if current else ""))) if data.get("ownerEmail", current.get("ownerEmail", "") if current else "") else "", "members": data.get("members", current.get("members", []) if current else []) if isinstance(data.get("members", current.get("members", []) if current else []), list) else []}
+    owner_email = normalize_email(str(data.get("ownerEmail", current.get("ownerEmail", "") if current else ""))) if data.get("ownerEmail", current.get("ownerEmail", "") if current else "") else ""
+    return {"name": name[:120], "slug": slug, "status": status if status in {"Active", "Inactive"} else "Active", "ownerEmail": owner_email, "members": clean_subaccount_members(data, owner_email, current)}
 
 
 def create_subaccount(context, data):
