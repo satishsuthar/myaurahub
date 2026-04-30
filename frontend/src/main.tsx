@@ -206,10 +206,13 @@ function AdminApp() {
   const [opportunityModalStageId, setOpportunityModalStageId] = useState<string | null>(null);
   const [automationForm, setAutomationForm] = useState(emptyAutomation);
   const [editingAutomationId, setEditingAutomationId] = useState<string | null>(null);
+  const [automationView, setAutomationView] = useState<"list" | "editor">("list");
+  const [automationZoom, setAutomationZoom] = useState(0.85);
   const [siteForm, setSiteForm] = useState<Omit<SitePage, "id">>(emptySitePage);
   const [editingSitePageId, setEditingSitePageId] = useState<string | null>(null);
   const [selectedSiteSectionId, setSelectedSiteSectionId] = useState(emptySitePage.sections[0].id);
   const [sitePageModalOpen, setSitePageModalOpen] = useState(false);
+  const [siteView, setSiteView] = useState<"sites" | "pages" | "editor">("sites");
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [contactForm, setContactForm] = useState<Omit<Contact, "id">>(emptyContact);
@@ -684,6 +687,14 @@ function AdminApp() {
       actions: rule.actions.map(mapAutomationActionToForm),
       isActive: rule.isActive
     });
+    setAutomationView("editor");
+    setActiveTab("automations");
+  }
+
+  function startNewAutomation() {
+    setEditingAutomationId(null);
+    setAutomationForm(emptyAutomation);
+    setAutomationView("editor");
     setActiveTab("automations");
   }
 
@@ -706,6 +717,7 @@ function AdminApp() {
       setAutomations(editingAutomationId ? automations.map((item) => item.id === saved.id ? saved : item) : [saved, ...automations]);
       setAutomationForm(emptyAutomation);
       setEditingAutomationId(null);
+      setAutomationView("list");
       setMessageTone("success");
       setMessage(editingAutomationId ? "Automation updated." : "Automation created.");
     } catch (error) {
@@ -729,6 +741,7 @@ function AdminApp() {
     if (editingAutomationId === rule.id) {
       setEditingAutomationId(null);
       setAutomationForm(emptyAutomation);
+      setAutomationView("list");
     }
     setMessageTone("success");
     setMessage("Automation deleted.");
@@ -769,6 +782,7 @@ function AdminApp() {
     setSelectedSiteSectionId((presets[template] ?? presets.coach).sections[0].id);
     setEditingSitePageId(null);
     setSitePageModalOpen(false);
+    setSiteView("editor");
     setActiveTab("sites");
   }
 
@@ -828,14 +842,29 @@ function AdminApp() {
     });
     setSitePages(editingSitePageId ? sitePages.map((page) => page.id === saved.id ? saved : page) : [saved, ...sitePages]);
     setEditingSitePageId(saved.id);
+    setSiteView("editor");
     setMessageTone("success");
     setMessage("Page saved.");
+  }
+
+  async function publishSitePage() {
+    const draft = { ...siteForm, status: "Published" as const };
+    const saved = await api<SitePage>(editingSitePageId ? `/api/sites/pages/${editingSitePageId}` : "/api/sites/pages", {
+      method: editingSitePageId ? "PUT" : "POST",
+      body: JSON.stringify(draft)
+    });
+    setSiteForm({ name: saved.name, slug: saved.slug, status: saved.status, template: saved.template, seoTitle: saved.seoTitle, seoDescription: saved.seoDescription, theme: saved.theme ?? theme, sections: saved.sections });
+    setSitePages(editingSitePageId ? sitePages.map((page) => page.id === saved.id ? saved : page) : [saved, ...sitePages]);
+    setEditingSitePageId(saved.id);
+    setMessageTone("success");
+    setMessage("Page published.");
   }
 
   function editSitePage(page: SitePage) {
     setEditingSitePageId(page.id);
     setSiteForm({ name: page.name, slug: page.slug, status: page.status, template: page.template, seoTitle: page.seoTitle, seoDescription: page.seoDescription, theme: page.theme ?? theme, sections: page.sections });
     setSelectedSiteSectionId(page.sections[0]?.id ?? "");
+    setSiteView("editor");
     setActiveTab("sites");
   }
 
@@ -1324,13 +1353,61 @@ function AdminApp() {
             })()}
           </section>}
 
-          {activeTab === "automations" && <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-            <Panel title={editingAutomationId ? "Edit Automation" : "Create Automation"} icon={<Workflow size={18} />}>
+          {activeTab === "automations" && <section className="space-y-5">
+            {automationView === "list" && <Panel title="Automation Rules" icon={<Workflow size={18} />}>
+              <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="display-font text-2xl font-black text-[#16202a]">Automations</div>
+                  <p className="text-sm text-[#64748b]">Create long-running workflows with waits, branches, webhooks, and opportunity actions.</p>
+                </div>
+                <button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={startNewAutomation}><Plus size={16} /> New automation</button>
+              </div>
+              <div className="space-y-3">
+                {automations.length === 0 && <div className="rounded-md border border-dashed border-[#cbd5e1] bg-[#fbfcff] p-6 text-sm text-stone-600">No automations yet. Create your first workflow from a trigger like appointment booked, webhook received, or recurring schedule.</div>}
+                {automations.map((rule) => (
+                  <div key={rule.id} className="rounded-md border border-[#dde3ec] bg-white p-4 shadow-sm">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="font-black text-[#16202a]">{rule.name}</div>
+                          <span className={`rounded-full px-2 py-1 text-[11px] font-black ${rule.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{rule.isActive ? "Active" : "Paused"}</span>
+                          <span className="rounded-full bg-[#eef5ff] px-2 py-1 text-[11px] font-black text-[#2563eb]">{rule.actions.length} steps</span>
+                        </div>
+                        {rule.description && <p className="mt-1 text-sm text-[#64748b]">{rule.description}</p>}
+                        <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
+                          {(rule.triggers?.length ? rule.triggers : [rule.trigger]).map((trigger, index) => <span key={`${trigger.type}-${index}`} className="rounded-md bg-[#eef5ff] px-2 py-1 text-[#2563eb]">When {automationTriggerOptions.find((item) => item.value === trigger.type)?.label ?? trigger.type}</span>)}
+                          {rule.actions.slice(0, 4).map((action) => <span key={action.id} className="rounded-md bg-[#fff8df] px-2 py-1 text-[#8a6100]">Then {automationActionOptions.find((item) => item.value === action.type)?.label ?? action.type}</span>)}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        <button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => toggleAutomation(rule)}>{rule.isActive ? "Pause" : "Activate"}</button>
+                        <button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => editAutomation(rule)}>Edit</button>
+                        <button className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700" onClick={() => deleteAutomation(rule)}>Delete</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Panel>}
+
+            {automationView === "editor" && <Panel title={editingAutomationId ? "Edit Automation" : "Create Automation"} icon={<Workflow size={18} />}>
+              <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <button className="mb-2 rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold" onClick={() => setAutomationView("list")}>Back to automations</button>
+                  <div className="display-font text-2xl font-black text-[#16202a]">{editingAutomationId ? "Edit automation" : "Create automation"}</div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold" onClick={() => setAutomationZoom(Math.max(0.55, Number((automationZoom - 0.1).toFixed(2))))}>Zoom out</button>
+                  <span className="rounded-md bg-[#f8fafc] px-3 py-2 text-sm font-black">{Math.round(automationZoom * 100)}%</span>
+                  <button className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold" onClick={() => setAutomationZoom(Math.min(1.25, Number((automationZoom + 0.1).toFixed(2))))}>Zoom in</button>
+                </div>
+              </div>
               <AutomationCanvas
                 title={automationForm.name || "New automation"}
                 triggers={automationForm.triggers}
                 actions={automationForm.actions}
                 isActive={automationForm.isActive}
+                zoom={automationZoom}
                 onAddTrigger={addAutomationTrigger}
                 onUpdateTrigger={updateAutomationTrigger}
                 onRemoveTrigger={(id) => setAutomationForm({ ...automationForm, triggers: automationForm.triggers.filter((item) => item.id !== id) })}
@@ -1397,58 +1474,75 @@ function AdminApp() {
               </div>
               <div className="mt-5 flex flex-wrap gap-2">
                 <button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveAutomation}><Save size={16} /> Save automation</button>
-                {editingAutomationId && <button className="rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" onClick={() => { setEditingAutomationId(null); setAutomationForm(emptyAutomation); }}>Cancel</button>}
+                {editingAutomationId && automations.find((item) => item.id === editingAutomationId) && <button className="rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" onClick={() => toggleAutomation(automations.find((item) => item.id === editingAutomationId)!)}>{automationForm.isActive ? "Pause" : "Activate"}</button>}
+                {editingAutomationId && automations.find((item) => item.id === editingAutomationId) && <button className="rounded-md border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-bold text-rose-700" onClick={() => deleteAutomation(automations.find((item) => item.id === editingAutomationId)!)}>Delete</button>}
+                <button className="rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" onClick={() => setAutomationView("list")}>Close editor</button>
               </div>
-            </Panel>
+            </Panel>}
+          </section>}
 
-            <Panel title="Automation Rules" icon={<Workflow size={18} />}>
+          {activeTab === "sites" && <section className="space-y-5">
+            {siteView === "sites" && <Panel title="Sites" icon={<ExternalLink size={18} />}>
+              <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="display-font text-2xl font-black text-[#16202a]">Sites</div>
+                  <p className="text-sm text-[#64748b]">Manage sites first, then open a site's pages and builder. This structure can also power funnels later.</p>
+                </div>
+                <button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={() => setSiteView("pages")}><Plus size={16} /> Open site</button>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <button className="rounded-md border border-[#dde3ec] bg-white p-5 text-left shadow-sm hover:border-[var(--theme-primary)] hover:bg-[#f8fbff]" onClick={() => setSiteView("pages")}>
+                  <div className="display-font text-xl font-black text-[#16202a]">{authUser.workspaceName} Site</div>
+                  <p className="mt-2 text-sm text-[#64748b]">/{authUser.workspaceSlug}</p>
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs font-black">
+                    <span className="rounded-md bg-[#eef5ff] px-2 py-1 text-[#2563eb]">{sitePages.length} pages</span>
+                    <span className="rounded-md bg-emerald-50 px-2 py-1 text-emerald-700">{sitePages.filter((page) => page.status === "Published").length} published</span>
+                  </div>
+                </button>
+                <div className="rounded-md border border-dashed border-[#cbd5e1] bg-[#fbfcff] p-5 text-sm text-[#64748b]">
+                  Multi-site creation will use the same page builder and public URL pattern. The current workspace site is ready now.
+                </div>
+              </div>
+            </Panel>}
+
+            {siteView === "pages" && <Panel title="Pages" icon={<ExternalLink size={18} />}>
+              <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <button className="mb-2 rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold" onClick={() => setSiteView("sites")}>Back to sites</button>
+                  <div className="display-font text-2xl font-black text-[#16202a]">{authUser.workspaceName} Site Pages</div>
+                  <p className="text-sm text-[#64748b]">Create, edit, and review pages before opening the builder.</p>
+                </div>
+                <button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={() => setSitePageModalOpen(true)}><Plus size={16} /> New page</button>
+              </div>
               <div className="space-y-3">
-                {automations.length === 0 && <p className="text-sm text-stone-600">No automations yet.</p>}
-                {automations.map((rule) => (
-                  <div key={rule.id} className="rounded-md border border-[#dde3ec] bg-white p-4 shadow-sm">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="font-black text-[#16202a]">{rule.name}</div>
-                          <span className={`rounded-full px-2 py-1 text-[11px] font-black ${rule.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{rule.isActive ? "Active" : "Inactive"}</span>
-                        </div>
-                        {rule.description && <p className="mt-1 text-sm text-[#64748b]">{rule.description}</p>}
-                        <AutomationCanvas
-                          title={rule.name}
-                          triggers={(rule.triggers?.length ? rule.triggers : [rule.trigger]).map((trigger, index) => {
-                            const filterEntries = Object.entries(trigger.filters ?? {});
-                            return { id: `trigger-${index}`, type: trigger.type, filterKey: filterEntries[0]?.[0] ?? "", filterValue: filterEntries[0]?.[1] ?? "" };
-                          })}
-                          actions={rule.actions.map(mapAutomationActionToForm)}
-                          isActive={rule.isActive}
-                          compact
-                        />
-                        <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
-                          <span className="rounded-md bg-[#eef5ff] px-2 py-1 text-[#2563eb]">When {automationTriggerOptions.find((item) => item.value === rule.trigger.type)?.label ?? rule.trigger.type}</span>
-                          {rule.actions.map((action) => <span key={action.id} className="rounded-md bg-[#fff8df] px-2 py-1 text-[#8a6100]">Then {automationActionOptions.find((item) => item.value === action.type)?.label ?? action.type}</span>)}
-                        </div>
-                      </div>
-                      <div className="flex shrink-0 flex-wrap gap-2">
-                        <button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => toggleAutomation(rule)}>{rule.isActive ? "Pause" : "Activate"}</button>
-                        <button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => editAutomation(rule)}>Edit</button>
-                        <button className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700" onClick={() => deleteAutomation(rule)}>Delete</button>
-                      </div>
+                {sitePages.length === 0 && <div className="rounded-md border border-dashed border-[#cbd5e1] bg-[#fbfcff] p-6 text-sm text-stone-600">No saved pages yet. Create a high-converting coach page from a preset.</div>}
+                {sitePages.map((page) => (
+                  <div key={page.id} className="flex flex-col gap-3 rounded-md border border-[#dde3ec] bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <div className="font-black text-[#16202a]">{page.name}</div>
+                      <div className="text-sm text-[#64748b]">/{authUser.workspaceSlug}/{page.slug}</div>
+                      <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[11px] font-black ${page.status === "Published" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{page.status}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => editSitePage(page)}>Edit</button>
+                      {page.status === "Published" && <a className="inline-flex items-center gap-2 rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold" target="_blank" href={`/${authUser.workspaceSlug}/${page.slug}`}><ExternalLink size={15} /> Open</a>}
                     </div>
                   </div>
                 ))}
               </div>
-            </Panel>
-          </section>}
+            </Panel>}
 
-          {activeTab === "sites" && <section className="space-y-5">
+            {siteView === "editor" && <>
             <div className="flex flex-col gap-3 rounded-md border border-[#dde3ec] bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
               <div>
+                <button className="mb-2 rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold" onClick={() => setSiteView("pages")}>Back to pages</button>
                 <div className="display-font text-2xl font-black text-[var(--theme-text)]">{siteForm.name}</div>
                 <p className="text-sm text-[#64748b]">/{authUser.workspaceSlug}/{siteForm.slug} - {siteForm.status}</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button className="rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" onClick={() => setSitePageModalOpen(true)}>Pages & templates</button>
                 <button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveSitePage}><Save size={16} /> Save page</button>
+                <button className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-bold text-white" onClick={publishSitePage}><Check size={16} /> Publish</button>
                 {editingSitePageId && <a className="inline-flex items-center gap-2 rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" target="_blank" href={`/${authUser.workspaceSlug}/${siteForm.slug}`}><ExternalLink size={15} /> Open</a>}
               </div>
             </div>
@@ -1463,12 +1557,7 @@ function AdminApp() {
                     <div className="mb-3 text-sm font-black">Page settings</div>
                     <Field label="Name" value={siteForm.name} onChange={(value) => setSiteForm({ ...siteForm, name: value, slug: editingSitePageId ? siteForm.slug : slugifyLocal(value) })} />
                     <Field label="Slug" value={siteForm.slug} onChange={(value) => setSiteForm({ ...siteForm, slug: slugifyLocal(value) })} />
-                    <label className="mt-3 block text-sm font-bold text-[#334155]">Status
-                      <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={siteForm.status} onChange={(event) => setSiteForm({ ...siteForm, status: event.target.value as "Draft" | "Published" })}>
-                        <option value="Draft">Draft</option>
-                        <option value="Published">Published</option>
-                      </select>
-                    </label>
+                    <div className="mt-3 rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3 text-sm font-bold text-[#334155]">Status: {siteForm.status}. Use the Publish button when this page is ready.</div>
                     <Field label="SEO title" value={siteForm.seoTitle ?? ""} onChange={(value) => setSiteForm({ ...siteForm, seoTitle: value })} />
                     <textarea className="mt-3 min-h-16 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" placeholder="SEO description" value={siteForm.seoDescription ?? ""} onChange={(event) => setSiteForm({ ...siteForm, seoDescription: event.target.value })} />
                     <div className="mt-4 border-t border-[#dde3ec] pt-3">
@@ -1550,6 +1639,7 @@ function AdminApp() {
                 </div>
               </div>
             </Panel>
+            </>}
             {sitePageModalOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f172a]/35 p-4">
               <div className="w-full max-w-3xl rounded-md bg-white p-5 shadow-2xl">
                 <div className="mb-4 flex items-center justify-between gap-3">
@@ -2045,6 +2135,7 @@ function AutomationCanvas({
   actions,
   isActive,
   compact = false,
+  zoom = 1,
   onAddTrigger,
   onUpdateTrigger,
   onRemoveTrigger,
@@ -2058,6 +2149,7 @@ function AutomationCanvas({
   actions: AutomationFormAction[];
   isActive: boolean;
   compact?: boolean;
+  zoom?: number;
   onAddTrigger?: () => void;
   onUpdateTrigger?: (id: string, patch: { type?: string; filterKey?: string; filterValue?: string }) => void;
   onRemoveTrigger?: (id: string) => void;
@@ -2069,12 +2161,12 @@ function AutomationCanvas({
   const editable = Boolean(onUpdateAction);
   const visibleActions = actions.length ? actions : [{ id: "empty-action", type: "", configText: "" }];
   return (
-    <div className={`${compact ? "mt-3 p-3" : "mb-5 p-4"} rounded-md border border-[#dde3ec] bg-[linear-gradient(135deg,#f8fbff,#fffdf4_52%,#f7fbf8)]`}>
+    <div className={`${compact ? "mt-3 p-3" : "mb-5 p-4"} overflow-auto rounded-md border border-[#dde3ec] bg-[linear-gradient(135deg,#f8fbff,#fffdf4_52%,#f7fbf8)]`}>
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="text-sm font-black text-[#16202a]">{compact ? "Workflow canvas" : title}</div>
         <span className={`rounded-full px-2 py-1 text-[11px] font-black ${isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{isActive ? "Active" : "Inactive"}</span>
       </div>
-      <div className="mx-auto flex max-w-2xl flex-col items-center">
+      <div className="mx-auto flex min-w-[980px] max-w-none origin-top flex-col items-center" style={{ transform: `scale(${compact ? 1 : zoom})`, transformOrigin: "top center", marginBottom: compact ? 0 : `${Math.max(0, 1 - zoom) * -140}px` }}>
         <div className="grid w-full gap-2 sm:grid-cols-2">
           {triggers.map((trigger, index) => (
             <DiagramNode
@@ -2137,7 +2229,7 @@ function AutomationStepTree({
         return (
           <React.Fragment key={action.id}>
             <DiagramArrow vertical />
-            <div className={`${depth ? "w-[92%]" : "w-full"} flex flex-col items-center`}>
+            <div className="flex w-full flex-col items-center">
               <DiagramNode
                 label={`${depth ? "Nested " : ""}Step ${index + 1}`}
                 type={action.type}
@@ -2151,14 +2243,14 @@ function AutomationStepTree({
                 onRemove={() => onRemoveAction?.(action.id)}
               />
               {hasBranches && (
-                <div className="mt-3 grid w-full gap-3 sm:grid-cols-2">
+                <div className="mt-3 grid w-[880px] gap-3 sm:grid-cols-2">
                   <div className="rounded-md border border-[#bbf7d0] bg-white p-3">
-                    <div className="mb-2 text-center text-xs font-black text-[#137333]">THEN / YES</div>
+                    <div className="mb-2 flex items-center justify-center gap-2 text-center text-xs font-black text-[#137333]"><span className="rounded-full bg-[#edf8f1] px-2 py-1">YES</span> THEN path</div>
                     {(action.then ?? []).length > 0 ? <AutomationStepTree actions={action.then ?? []} compact={compact} editable={editable} canRemoveRoot depth={depth + 1} onAddActionAfter={onAddActionAfter} onAddNestedAction={onAddNestedAction} onUpdateAction={onUpdateAction} onRemoveAction={onRemoveAction} /> : <div className="text-center text-xs font-bold text-[#64748b]">No steps yet</div>}
                     {editable && <button className="mt-2 w-full rounded-md border border-[#bbf7d0] bg-[#edf8f1] px-2 py-2 text-xs font-black text-[#137333]" onClick={() => onAddNestedAction?.(action.id, "then")}>Add yes step</button>}
                   </div>
                   <div className="rounded-md border border-[#fbcfe8] bg-white p-3">
-                    <div className="mb-2 text-center text-xs font-black text-[#9d174d]">ELSE / NO</div>
+                    <div className="mb-2 flex items-center justify-center gap-2 text-center text-xs font-black text-[#9d174d]"><span className="rounded-full bg-[#fff1f8] px-2 py-1">NO</span> ELSE path</div>
                     {(action.else ?? []).length > 0 ? <AutomationStepTree actions={action.else ?? []} compact={compact} editable={editable} canRemoveRoot depth={depth + 1} onAddActionAfter={onAddActionAfter} onAddNestedAction={onAddNestedAction} onUpdateAction={onUpdateAction} onRemoveAction={onRemoveAction} /> : <div className="text-center text-xs font-bold text-[#64748b]">No steps yet</div>}
                     {editable && <button className="mt-2 w-full rounded-md border border-[#fbcfe8] bg-[#fff1f8] px-2 py-2 text-xs font-black text-[#9d174d]" onClick={() => onAddNestedAction?.(action.id, "else")}>Add no step</button>}
                   </div>
@@ -2339,7 +2431,7 @@ function DiagramNode({
   const editable = Boolean(onChange);
   const labelText = kind === "trigger" ? automationTriggerOptions.find((item) => item.value === type)?.label ?? type : value ?? automationActionOptions.find((item) => item.value === type)?.label ?? type;
   return (
-    <div className={`min-h-20 w-full rounded-md border p-3 text-center shadow-sm ${tones[tone]}`}>
+    <div className={`min-h-20 w-[360px] rounded-md border p-3 text-center shadow-sm ${tones[tone]}`}>
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="text-[10px] font-black uppercase tracking-wide opacity-75">{label}</div>
         {editable && canRemove && <button className="rounded border border-current/20 px-1.5 py-0.5 text-[10px] font-black" onClick={onRemove}>Remove</button>}
