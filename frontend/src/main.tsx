@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Calendar, Check, Clock, Copy, ExternalLink, Lock, LogOut, MapPin, Plus, Save, Settings, Trash2, Users, Workflow } from "lucide-react";
+import { Calendar, Check, Clock, Copy, ExternalLink, Lock, LogOut, MapPin, Megaphone, Plus, Save, Settings, Trash2, Users, Workflow } from "lucide-react";
 import "./index.css";
-import { api, apiBase, AppointmentType, AutomationAction, AutomationRule, AvailabilityRule, AuthResponse, AuthUser, Booking, Contact, ContactActivity, ContactCustomField, ContactTask, Opportunity, Pipeline, SitePage, Slot, ThemeConfig, UnavailabilityDate, WhiteLabelSettings, WorkspaceUser, clearAuth, getAuthUser, saveAuth, userId } from "./api";
+import { api, apiBase, AppointmentType, AutomationAction, AutomationRule, AvailabilityRule, AuthResponse, AuthUser, Booking, Contact, ContactActivity, ContactCustomField, ContactTask, MarketingAccount, MarketingCampaign, MarketingTracking, Opportunity, Pipeline, SitePage, Slot, SubAccount, ThemeConfig, UnavailabilityDate, WhiteLabelSettings, WorkspaceRole, WorkspaceUser, clearAuth, getAuthUser, saveAuth, userId } from "./api";
 
 const defaultAppointment: Omit<AppointmentType, "id" | "isActive"> = {
   assignedUserId: userId,
@@ -190,6 +190,10 @@ const roleTemplates: Record<string, Record<string, boolean>> = {
   Viewer: { scheduling: true, contacts: true, opportunities: true, automations: true, sites: true, settings: false, team: false, billing: false }
 };
 const emptyTeamUser = { firstName: "", lastName: "", email: "", password: "", role: "Staff", permissions: roleTemplates.Staff, status: "Active" as "Active" | "Inactive" };
+const emptyRole = { name: "", description: "", permissions: roleTemplates.Staff };
+const emptySubAccount = { name: "", slug: "", ownerEmail: "", status: "Active" as "Active" | "Inactive" };
+const emptyMarketingAccount = { provider: "Meta", accountName: "", accountId: "", status: "NeedsAuth" as "Connected" | "NeedsAuth" | "Disabled" };
+const emptyCampaign = { name: "", channel: "Social", status: "Draft" as MarketingCampaign["status"], objective: "", audience: "", content: "", scheduledAt: "", accountIds: [] as string[], trackingCode: "" };
 
 function Router() {
   const pathParts = window.location.pathname.split("/").filter(Boolean);
@@ -208,9 +212,21 @@ function AdminApp() {
   const [automations, setAutomations] = useState<AutomationRule[]>([]);
   const [sitePages, setSitePages] = useState<SitePage[]>([]);
   const [workspaceUsers, setWorkspaceUsers] = useState<WorkspaceUser[]>([]);
+  const [workspaceRoles, setWorkspaceRoles] = useState<WorkspaceRole[]>([]);
+  const [subAccounts, setSubAccounts] = useState<SubAccount[]>([]);
+  const [marketingAccounts, setMarketingAccounts] = useState<MarketingAccount[]>([]);
+  const [marketingCampaigns, setMarketingCampaigns] = useState<MarketingCampaign[]>([]);
+  const [marketingTracking, setMarketingTracking] = useState<MarketingTracking>({});
   const [whiteLabel, setWhiteLabel] = useState<WhiteLabelSettings>({ brandName: "", supportEmail: "", customDomain: "", logoUrl: "", agencyMode: true, resellerName: "", hidePoweredBy: false });
   const [teamForm, setTeamForm] = useState(emptyTeamUser);
+  const [roleForm, setRoleForm] = useState(emptyRole);
+  const [subAccountForm, setSubAccountForm] = useState(emptySubAccount);
+  const [marketingAccountForm, setMarketingAccountForm] = useState(emptyMarketingAccount);
+  const [campaignForm, setCampaignForm] = useState(emptyCampaign);
   const [editingTeamUserId, setEditingTeamUserId] = useState<string | null>(null);
+  const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
+  const [editingSubAccountId, setEditingSubAccountId] = useState<string | null>(null);
+  const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>("");
   const [pipelineForm, setPipelineForm] = useState(emptyPipeline);
   const [opportunityForm, setOpportunityForm] = useState(emptyOpportunity);
@@ -237,7 +253,7 @@ function AdminApp() {
   const [unavailability, setUnavailability] = useState<UnavailabilityDate[]>([]);
   const [form, setForm] = useState(defaultAppointment);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"calendars" | "availability" | "bookings" | "schedulingSettings" | "contacts" | "opportunities" | "automations" | "sites" | "settings" | "profile">("calendars");
+  const [activeTab, setActiveTab] = useState<"calendars" | "availability" | "bookings" | "schedulingSettings" | "contacts" | "opportunities" | "automations" | "sites" | "marketing" | "team" | "settings" | "profile">("calendars");
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"success" | "error">("success");
   const [savingAppointment, setSavingAppointment] = useState(false);
@@ -253,7 +269,7 @@ function AdminApp() {
   }
 
   async function load() {
-    const [appointmentData, bookingData, contactData, pipelineData, opportunityData, automationData, sitePageData, availabilityData, unavailableData, themeData, userData, whiteLabelData] = await Promise.all([
+    const [appointmentData, bookingData, contactData, pipelineData, opportunityData, automationData, sitePageData, availabilityData, unavailableData, themeData, userData, roleData, subAccountData, whiteLabelData, marketingAccountData, campaignData, trackingData] = await Promise.all([
       api<AppointmentType[]>("/api/calendar/appointment-types"),
       api<Booking[]>("/api/calendar/bookings"),
       api<Contact[]>("/api/contacts"),
@@ -265,7 +281,12 @@ function AdminApp() {
       api<UnavailabilityDate[]>("/api/calendar/unavailability"),
       api<ThemeConfig>("/api/workspace/theme"),
       api<WorkspaceUser[]>("/api/workspace/users").catch(() => []),
-      api<WhiteLabelSettings>("/api/workspace/white-label").catch(() => ({ brandName: authUser?.workspaceName ?? "", agencyMode: true, hidePoweredBy: false }))
+      api<WorkspaceRole[]>("/api/workspace/roles").catch(() => []),
+      api<SubAccount[]>("/api/workspace/subaccounts").catch(() => []),
+      api<WhiteLabelSettings>("/api/workspace/white-label").catch(() => ({ brandName: authUser?.workspaceName ?? "", agencyMode: true, hidePoweredBy: false })),
+      api<MarketingAccount[]>("/api/marketing/accounts").catch(() => []),
+      api<MarketingCampaign[]>("/api/marketing/campaigns").catch(() => []),
+      api<MarketingTracking>("/api/marketing/tracking").catch(() => ({}))
     ]);
     setAppointments(appointmentData);
     setBookings(bookingData);
@@ -279,7 +300,12 @@ function AdminApp() {
     setUnavailability(unavailableData);
     setTheme(themeData);
     setWorkspaceUsers(userData);
+    setWorkspaceRoles(roleData);
+    setSubAccounts(subAccountData);
     setWhiteLabel({ ...{ brandName: authUser?.workspaceName ?? "", supportEmail: "", customDomain: "", logoUrl: "", agencyMode: true, resellerName: "", hidePoweredBy: false }, ...whiteLabelData });
+    setMarketingAccounts(marketingAccountData);
+    setMarketingCampaigns(campaignData);
+    setMarketingTracking(trackingData);
   }
 
   useEffect(() => {
@@ -443,6 +469,77 @@ function AdminApp() {
     setWhiteLabel(saved);
     setMessageTone("success");
     setMessage("White-label settings saved.");
+  }
+
+  async function saveWorkspaceRole() {
+    if (!roleForm.name.trim()) {
+      setMessageTone("error");
+      setMessage("Role name is required.");
+      return;
+    }
+    const saved = await api<WorkspaceRole>(editingRoleId ? `/api/workspace/roles/${editingRoleId}` : "/api/workspace/roles", {
+      method: editingRoleId ? "PUT" : "POST",
+      body: JSON.stringify(roleForm)
+    });
+    setWorkspaceRoles(editingRoleId ? workspaceRoles.map((item) => item.id === saved.id ? saved : item) : [...workspaceRoles, saved]);
+    setRoleForm(emptyRole);
+    setEditingRoleId(null);
+    setMessageTone("success");
+    setMessage("Role saved.");
+  }
+
+  async function saveSubAccount() {
+    if (!subAccountForm.name.trim()) {
+      setMessageTone("error");
+      setMessage("Subaccount name is required.");
+      return;
+    }
+    const saved = await api<SubAccount>(editingSubAccountId ? `/api/workspace/subaccounts/${editingSubAccountId}` : "/api/workspace/subaccounts", {
+      method: editingSubAccountId ? "PUT" : "POST",
+      body: JSON.stringify({ ...subAccountForm, slug: subAccountForm.slug || slugifyLocal(subAccountForm.name) })
+    });
+    setSubAccounts(editingSubAccountId ? subAccounts.map((item) => item.id === saved.id ? saved : item) : [...subAccounts, saved]);
+    setSubAccountForm(emptySubAccount);
+    setEditingSubAccountId(null);
+    setMessageTone("success");
+    setMessage("Subaccount saved.");
+  }
+
+  async function saveMarketingAccount() {
+    if (!marketingAccountForm.accountName.trim()) {
+      setMessageTone("error");
+      setMessage("Account name is required.");
+      return;
+    }
+    const saved = await api<MarketingAccount>("/api/marketing/accounts", { method: "POST", body: JSON.stringify(marketingAccountForm) });
+    setMarketingAccounts([...marketingAccounts, saved]);
+    setMarketingAccountForm(emptyMarketingAccount);
+    setMessageTone("success");
+    setMessage("Marketing account added.");
+  }
+
+  async function saveCampaign() {
+    if (!campaignForm.name.trim()) {
+      setMessageTone("error");
+      setMessage("Campaign name is required.");
+      return;
+    }
+    const saved = await api<MarketingCampaign>(editingCampaignId ? `/api/marketing/campaigns/${editingCampaignId}` : "/api/marketing/campaigns", {
+      method: editingCampaignId ? "PUT" : "POST",
+      body: JSON.stringify(campaignForm)
+    });
+    setMarketingCampaigns(editingCampaignId ? marketingCampaigns.map((item) => item.id === saved.id ? saved : item) : [saved, ...marketingCampaigns]);
+    setCampaignForm(emptyCampaign);
+    setEditingCampaignId(null);
+    setMessageTone("success");
+    setMessage("Campaign saved.");
+  }
+
+  async function saveMarketingTracking() {
+    const saved = await api<MarketingTracking>("/api/marketing/tracking", { method: "PUT", body: JSON.stringify(marketingTracking) });
+    setMarketingTracking(saved);
+    setMessageTone("success");
+    setMessage("Tracking settings saved.");
   }
 
   async function openContact(contact: Contact) {
@@ -985,8 +1082,10 @@ function AdminApp() {
           <NavItem collapsed={navCollapsed} icon={<Clock size={17} />} label="Opportunities" active={activeTab === "opportunities"} onClick={() => setActiveTab("opportunities")} />
           <NavItem collapsed={navCollapsed} icon={<Workflow size={17} />} label="Automations" active={activeTab === "automations"} onClick={() => setActiveTab("automations")} />
           <NavItem collapsed={navCollapsed} icon={<ExternalLink size={17} />} label="Sites" active={activeTab === "sites"} onClick={() => setActiveTab("sites")} />
+          <NavItem collapsed={navCollapsed} icon={<Megaphone size={17} />} label="Marketing" active={activeTab === "marketing"} onClick={() => setActiveTab("marketing")} />
         </nav>
         <nav className="absolute bottom-5 left-4 right-4 space-y-1 text-sm font-medium">
+          <NavItem collapsed={navCollapsed} icon={<Users size={17} />} label="My Team" active={activeTab === "team"} onClick={() => setActiveTab("team")} />
           <NavItem collapsed={navCollapsed} icon={<Settings size={17} />} label="App Settings" active={activeTab === "settings"} onClick={() => setActiveTab("settings")} />
           <NavItem collapsed={navCollapsed} icon={<Users size={17} />} label="My Profile" active={activeTab === "profile"} onClick={() => setActiveTab("profile")} />
           <NavItem collapsed={navCollapsed} icon={<LogOut size={17} />} label="Logout" onClick={() => { clearAuth(); setAuthUser(null); }} />
@@ -998,8 +1097,8 @@ function AdminApp() {
           <ColorRail />
           <div className="flex items-center justify-between px-5 py-3 lg:px-6">
             <div>
-              <h1 className="display-font text-xl font-bold">{activeTab === "contacts" ? "Contacts" : activeTab === "opportunities" ? "Opportunities" : activeTab === "automations" ? "Automations" : activeTab === "sites" ? "Sites" : activeTab === "settings" ? "App Settings" : activeTab === "profile" ? "My Profile" : "Scheduling"}</h1>
-              <p className="text-xs font-medium text-[#64748b]">{activeTab === "contacts" ? "Contacts, custom fields, tasks, and activity timeline." : activeTab === "opportunities" ? "Pipelines, stages, deals, and revenue tracking." : activeTab === "automations" ? "Workflow rules that react to bookings, contacts, pages, tasks, and opportunities." : activeTab === "sites" ? "Landing pages, mini-sites, and WYSIWYG page editing." : activeTab === "settings" ? "Workspace-wide branding and application settings." : activeTab === "profile" ? "Your login and workspace access details." : "Appointment types, availability, bookings, and scheduling settings."}</p>
+              <h1 className="display-font text-xl font-bold">{activeTab === "contacts" ? "Contacts" : activeTab === "opportunities" ? "Opportunities" : activeTab === "automations" ? "Automations" : activeTab === "sites" ? "Sites" : activeTab === "marketing" ? "Marketing" : activeTab === "team" ? "My Team" : activeTab === "settings" ? "App Settings" : activeTab === "profile" ? "My Profile" : "Scheduling"}</h1>
+              <p className="text-xs font-medium text-[#64748b]">{activeTab === "contacts" ? "Contacts, custom fields, tasks, and activity timeline." : activeTab === "opportunities" ? "Pipelines, stages, deals, and revenue tracking." : activeTab === "automations" ? "Workflow rules that react to bookings, contacts, pages, tasks, and opportunities." : activeTab === "sites" ? "Landing pages, mini-sites, and WYSIWYG page editing." : activeTab === "marketing" ? "Campaigns, connected ad/social accounts, schedules, and tracking." : activeTab === "team" ? "Users, custom roles, permissions, and agency subaccounts." : activeTab === "settings" ? "Workspace-wide branding and application settings." : activeTab === "profile" ? "Your login and workspace access details." : "Appointment types, availability, bookings, and scheduling settings."}</p>
             </div>
           </div>
         </header>
@@ -1729,6 +1828,131 @@ function AdminApp() {
             </div>}
           </section>}
 
+          {activeTab === "marketing" && <section className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+            <Panel title="Campaigns" icon={<Megaphone size={18} />}>
+              <div className="rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
+                <div className="mb-3 text-sm font-black">{editingCampaignId ? "Edit campaign" : "Create campaign"}</div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field label="Campaign name" value={campaignForm.name} onChange={(value) => setCampaignForm({ ...campaignForm, name: value })} />
+                  <label className="text-sm font-bold text-[#334155]">Channel
+                    <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={campaignForm.channel} onChange={(event) => setCampaignForm({ ...campaignForm, channel: event.target.value })}>
+                      {["Social", "Meta Ads", "Google Ads", "Email", "SMS", "Multi-channel"].map((item) => <option key={item}>{item}</option>)}
+                    </select>
+                  </label>
+                  <label className="text-sm font-bold text-[#334155]">Status
+                    <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={campaignForm.status} onChange={(event) => setCampaignForm({ ...campaignForm, status: event.target.value as MarketingCampaign["status"] })}>
+                      {["Draft", "Scheduled", "Active", "Paused", "Completed"].map((item) => <option key={item}>{item}</option>)}
+                    </select>
+                  </label>
+                  <Field label="Scheduled at" type="datetime-local" value={campaignForm.scheduledAt ?? ""} onChange={(value) => setCampaignForm({ ...campaignForm, scheduledAt: value })} />
+                  <Field label="Objective" value={campaignForm.objective ?? ""} onChange={(value) => setCampaignForm({ ...campaignForm, objective: value })} />
+                  <Field label="Audience" value={campaignForm.audience ?? ""} onChange={(value) => setCampaignForm({ ...campaignForm, audience: value })} />
+                </div>
+                <textarea className="mt-3 min-h-24 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" placeholder="Post, ad, or campaign content" value={campaignForm.content ?? ""} onChange={(event) => setCampaignForm({ ...campaignForm, content: event.target.value })} />
+                <Field label="Tracking code / UTM campaign" value={campaignForm.trackingCode ?? ""} onChange={(value) => setCampaignForm({ ...campaignForm, trackingCode: value })} />
+                <button className="mt-4 inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveCampaign}><Save size={16} /> Save campaign</button>
+              </div>
+              <div className="mt-4 space-y-2">
+                {marketingCampaigns.map((campaign) => <div key={campaign.id} className="rounded-md border border-[#dde3ec] bg-white p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div><div className="font-black">{campaign.name}</div><div className="text-sm text-[#64748b]">{campaign.channel} - {campaign.status}</div></div>
+                    <button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => { setEditingCampaignId(campaign.id); setCampaignForm({ name: campaign.name, channel: campaign.channel, status: campaign.status, objective: campaign.objective ?? "", audience: campaign.audience ?? "", content: campaign.content ?? "", scheduledAt: campaign.scheduledAt ?? "", accountIds: campaign.accountIds ?? [], trackingCode: campaign.trackingCode ?? "" }); }}>Edit</button>
+                  </div>
+                </div>)}
+              </div>
+            </Panel>
+            <div className="space-y-5">
+              <Panel title="Connected Accounts" icon={<ExternalLink size={18} />}>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="text-sm font-bold text-[#334155]">Provider
+                    <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={marketingAccountForm.provider} onChange={(event) => setMarketingAccountForm({ ...marketingAccountForm, provider: event.target.value })}>
+                      {["Meta", "Google", "Instagram", "Facebook", "LinkedIn", "TikTok", "YouTube", "X"].map((item) => <option key={item}>{item}</option>)}
+                    </select>
+                  </label>
+                  <Field label="Account name" value={marketingAccountForm.accountName} onChange={(value) => setMarketingAccountForm({ ...marketingAccountForm, accountName: value })} />
+                  <Field label="External account ID" value={marketingAccountForm.accountId ?? ""} onChange={(value) => setMarketingAccountForm({ ...marketingAccountForm, accountId: value })} />
+                  <label className="text-sm font-bold text-[#334155]">Status
+                    <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={marketingAccountForm.status} onChange={(event) => setMarketingAccountForm({ ...marketingAccountForm, status: event.target.value as MarketingAccount["status"] })}>
+                      {["NeedsAuth", "Connected", "Disabled"].map((item) => <option key={item}>{item}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <button className="mt-4 inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveMarketingAccount}><Plus size={16} /> Add account</button>
+                <div className="mt-4 space-y-2">{marketingAccounts.map((account) => <div key={account.id} className="rounded-md border border-[#dde3ec] bg-white p-3 text-sm"><b>{account.provider}</b> - {account.accountName} <span className="text-[#64748b]">({account.status})</span></div>)}</div>
+              </Panel>
+              <Panel title="Tracking" icon={<Settings size={18} />}>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field label="Meta Pixel ID" value={marketingTracking.metaPixelId ?? ""} onChange={(value) => setMarketingTracking({ ...marketingTracking, metaPixelId: value })} />
+                  <Field label="Google Tag ID" value={marketingTracking.googleTagId ?? ""} onChange={(value) => setMarketingTracking({ ...marketingTracking, googleTagId: value })} />
+                  <Field label="Google Analytics ID" value={marketingTracking.googleAnalyticsId ?? ""} onChange={(value) => setMarketingTracking({ ...marketingTracking, googleAnalyticsId: value })} />
+                  <Field label="Default UTM source" value={marketingTracking.defaultUtmSource ?? ""} onChange={(value) => setMarketingTracking({ ...marketingTracking, defaultUtmSource: value })} />
+                  <Field label="Default UTM medium" value={marketingTracking.defaultUtmMedium ?? ""} onChange={(value) => setMarketingTracking({ ...marketingTracking, defaultUtmMedium: value })} />
+                  <Field label="Default UTM campaign" value={marketingTracking.defaultUtmCampaign ?? ""} onChange={(value) => setMarketingTracking({ ...marketingTracking, defaultUtmCampaign: value })} />
+                </div>
+                <button className="mt-4 inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveMarketingTracking}><Save size={16} /> Save tracking</button>
+              </Panel>
+            </div>
+          </section>}
+
+          {activeTab === "team" && <section className="space-y-5">
+            <Panel title="Users" icon={<Users size={18} />}>
+              <div className="grid gap-4 xl:grid-cols-[1fr_1.1fr]">
+                <div className="rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
+                  <div className="mb-3 text-sm font-black">{editingTeamUserId ? "Edit user" : "Create user"}</div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <Field label="First name" value={teamForm.firstName} onChange={(value) => setTeamForm({ ...teamForm, firstName: value })} />
+                    <Field label="Last name" value={teamForm.lastName} onChange={(value) => setTeamForm({ ...teamForm, lastName: value })} />
+                    <Field label="Email" value={teamForm.email} onChange={(value) => setTeamForm({ ...teamForm, email: value })} />
+                    <Field label={editingTeamUserId ? "New password optional" : "Password optional"} type="password" value={teamForm.password} onChange={(value) => setTeamForm({ ...teamForm, password: value })} />
+                    <label className="text-sm font-bold text-[#334155]">Role
+                      <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={teamForm.role} onChange={(event) => {
+                        const roleName = event.target.value;
+                        const customRole = workspaceRoles.find((role) => role.name === roleName);
+                        setTeamForm({ ...teamForm, role: roleName, permissions: customRole?.permissions ?? roleTemplates[roleName] ?? roleTemplates.Staff });
+                      }}>
+                        {[...Object.keys(roleTemplates), ...workspaceRoles.filter((role) => !role.system).map((role) => role.name)].map((role) => <option key={role} value={role}>{role}</option>)}
+                      </select>
+                    </label>
+                    <label className="text-sm font-bold text-[#334155]">Status
+                      <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={teamForm.status} onChange={(event) => setTeamForm({ ...teamForm, status: event.target.value as "Active" | "Inactive" })}>
+                        <option value="Active">Active</option><option value="Inactive">Inactive</option>
+                      </select>
+                    </label>
+                  </div>
+                  <PermissionGrid permissions={teamForm.permissions} onChange={(permissions) => setTeamForm({ ...teamForm, permissions })} />
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveTeamUser}><Save size={16} /> Save user</button>
+                    {editingTeamUserId && <button className="rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" onClick={() => { setEditingTeamUserId(null); setTeamForm(emptyTeamUser); }}>Cancel</button>}
+                  </div>
+                </div>
+                <div className="space-y-2">{workspaceUsers.map((member) => <div key={member.id} className="rounded-md border border-[#dde3ec] bg-white p-3"><div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between"><div><div className="font-black text-[#16202a]">{`${member.firstName ?? ""} ${member.lastName ?? ""}`.trim() || member.email}</div><div className="text-sm text-[#64748b]">{member.email}</div><div className="mt-2 flex gap-1.5 text-[11px] font-black"><span className="rounded-full bg-[#eef5ff] px-2 py-1 text-[#2563eb]">{member.role}</span><span className={`rounded-full px-2 py-1 ${member.status === "Active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{member.status}</span></div></div><div className="flex flex-wrap gap-2"><button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => editTeamUser(member)}>Edit</button><button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => toggleTeamUser(member)}>{member.status === "Active" ? "Deactivate" : "Activate"}</button></div></div></div>)}</div>
+              </div>
+            </Panel>
+            <Panel title="Roles" icon={<Settings size={18} />}>
+              <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+                <div className="rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
+                  <Field label="Role name" value={roleForm.name} onChange={(value) => setRoleForm({ ...roleForm, name: value })} />
+                  <textarea className="mt-3 min-h-16 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" placeholder="Description" value={roleForm.description} onChange={(event) => setRoleForm({ ...roleForm, description: event.target.value })} />
+                  <PermissionGrid permissions={roleForm.permissions} onChange={(permissions) => setRoleForm({ ...roleForm, permissions })} />
+                  <button className="mt-4 inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveWorkspaceRole}><Save size={16} /> Save role</button>
+                </div>
+                <div className="space-y-2">{[...Object.entries(roleTemplates).map(([name, permissions]) => ({ id: name, name, permissions, system: true } as WorkspaceRole)), ...workspaceRoles].map((role) => <button key={role.id} className="w-full rounded-md border border-[#dde3ec] bg-white p-3 text-left" onClick={() => { if (!role.system) { setEditingRoleId(role.id); setRoleForm({ name: role.name, description: role.description ?? "", permissions: role.permissions }); } }}><div className="font-black">{role.name} {role.system && <span className="text-xs text-[#64748b]">(system)</span>}</div><div className="mt-1 text-xs text-[#64748b]">{permissionKeys.filter((key) => role.permissions[key]).join(", ")}</div></button>)}</div>
+              </div>
+            </Panel>
+            <Panel title="Subaccounts" icon={<Users size={18} />}>
+              <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+                <div className="rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
+                  <Field label="Subaccount name" value={subAccountForm.name} onChange={(value) => setSubAccountForm({ ...subAccountForm, name: value, slug: editingSubAccountId ? subAccountForm.slug : slugifyLocal(value) })} />
+                  <Field label="Slug" value={subAccountForm.slug} onChange={(value) => setSubAccountForm({ ...subAccountForm, slug: slugifyLocal(value) })} />
+                  <Field label="Owner email" value={subAccountForm.ownerEmail} onChange={(value) => setSubAccountForm({ ...subAccountForm, ownerEmail: value })} />
+                  <label className="mt-3 block text-sm font-bold text-[#334155]">Status<select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={subAccountForm.status} onChange={(event) => setSubAccountForm({ ...subAccountForm, status: event.target.value as "Active" | "Inactive" })}><option>Active</option><option>Inactive</option></select></label>
+                  <button className="mt-4 inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveSubAccount}><Save size={16} /> Save subaccount</button>
+                </div>
+                <div className="space-y-2">{subAccounts.map((account) => <button key={account.id} className="w-full rounded-md border border-[#dde3ec] bg-white p-3 text-left" onClick={() => { setEditingSubAccountId(account.id); setSubAccountForm({ name: account.name, slug: account.slug, ownerEmail: account.ownerEmail ?? "", status: account.status }); }}><div className="font-black">{account.name}</div><div className="text-sm text-[#64748b]">/{account.slug} - {account.status}</div><div className="mt-1 text-xs text-[#64748b]">Owner: {account.ownerEmail || "Unassigned"}</div></button>)}</div>
+              </div>
+            </Panel>
+          </section>}
+
           {activeTab === "settings" && <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
             <Panel title="Application Settings" icon={<Settings size={18} />}>
               <div className="space-y-2 text-sm text-stone-600">
@@ -1749,57 +1973,6 @@ function AdminApp() {
                 <label className="flex items-center gap-2 text-sm font-bold text-[#334155]"><input type="checkbox" checked={whiteLabel.hidePoweredBy} onChange={(event) => setWhiteLabel({ ...whiteLabel, hidePoweredBy: event.target.checked })} /> Hide powered-by branding</label>
               </div>
               <button className="mt-5 inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveWhiteLabel}><Save size={16} /> Save white label</button>
-            </Panel>
-            <Panel title="Users, Roles & Permissions" icon={<Users size={18} />}>
-              <div className="grid gap-4 xl:grid-cols-[1fr_1.1fr]">
-                <div className="rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
-                  <div className="mb-3 text-sm font-black">{editingTeamUserId ? "Edit user" : "Create user"}</div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <Field label="First name" value={teamForm.firstName} onChange={(value) => setTeamForm({ ...teamForm, firstName: value })} />
-                    <Field label="Last name" value={teamForm.lastName} onChange={(value) => setTeamForm({ ...teamForm, lastName: value })} />
-                    <Field label="Email" value={teamForm.email} onChange={(value) => setTeamForm({ ...teamForm, email: value })} />
-                    <Field label={editingTeamUserId ? "New password optional" : "Password optional"} type="password" value={teamForm.password} onChange={(value) => setTeamForm({ ...teamForm, password: value })} />
-                    <label className="text-sm font-bold text-[#334155]">Role
-                      <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={teamForm.role} onChange={(event) => setTeamForm({ ...teamForm, role: event.target.value, permissions: roleTemplates[event.target.value] ?? roleTemplates.Staff })}>
-                        {Object.keys(roleTemplates).map((role) => <option key={role} value={role}>{role}</option>)}
-                      </select>
-                    </label>
-                    <label className="text-sm font-bold text-[#334155]">Status
-                      <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={teamForm.status} onChange={(event) => setTeamForm({ ...teamForm, status: event.target.value as "Active" | "Inactive" })}>
-                        <option value="Active">Active</option>
-                        <option value="Inactive">Inactive</option>
-                      </select>
-                    </label>
-                  </div>
-                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                    {permissionKeys.map((key) => <label key={key} className="flex items-center gap-2 rounded-md border border-[#dde3ec] bg-white p-2 text-sm font-bold capitalize text-[#334155]"><input type="checkbox" checked={Boolean(teamForm.permissions[key])} onChange={(event) => setTeamForm({ ...teamForm, permissions: { ...teamForm.permissions, [key]: event.target.checked } })} /> {key}</label>)}
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveTeamUser}><Save size={16} /> Save user</button>
-                    {editingTeamUserId && <button className="rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" onClick={() => { setEditingTeamUserId(null); setTeamForm(emptyTeamUser); }}>Cancel</button>}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {workspaceUsers.map((member) => (
-                    <div key={member.id} className="rounded-md border border-[#dde3ec] bg-white p-3">
-                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                        <div>
-                          <div className="font-black text-[#16202a]">{`${member.firstName ?? ""} ${member.lastName ?? ""}`.trim() || member.email}</div>
-                          <div className="text-sm text-[#64748b]">{member.email}</div>
-                          <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-black">
-                            <span className="rounded-full bg-[#eef5ff] px-2 py-1 text-[#2563eb]">{member.role}</span>
-                            <span className={`rounded-full px-2 py-1 ${member.status === "Active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{member.status}</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => editTeamUser(member)}>Edit</button>
-                          <button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => toggleTeamUser(member)}>{member.status === "Active" ? "Deactivate" : "Activate"}</button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
             </Panel>
             <Panel title="Brand Theme" icon={<Settings size={18} />}>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -2231,6 +2404,18 @@ function ModuleTab({ label, active, onClick }: { label: string; active: boolean;
     <button className={`rounded-md px-3 py-2 text-sm font-bold ${active ? "bg-[var(--theme-primary)] text-white" : "text-[#64748b] hover:bg-[#f1f5f9]"}`} onClick={onClick}>
       {label}
     </button>
+  );
+}
+
+function PermissionGrid({ permissions, onChange }: { permissions: Record<string, boolean>; onChange: (permissions: Record<string, boolean>) => void }) {
+  return (
+    <div className="mt-4 grid gap-2 sm:grid-cols-2">
+      {permissionKeys.map((key) => (
+        <label key={key} className="flex items-center gap-2 rounded-md border border-[#dde3ec] bg-white p-2 text-sm font-bold capitalize text-[#334155]">
+          <input type="checkbox" checked={Boolean(permissions[key])} onChange={(event) => onChange({ ...permissions, [key]: event.target.checked })} /> {key}
+        </label>
+      ))}
+    </div>
   );
 }
 

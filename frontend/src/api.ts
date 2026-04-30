@@ -244,6 +244,60 @@ export type WhiteLabelSettings = {
   hidePoweredBy: boolean;
 };
 
+export type WorkspaceRole = {
+  id: string;
+  name: string;
+  description?: string;
+  permissions: Record<string, boolean>;
+  system?: boolean;
+};
+
+export type SubAccount = {
+  id: string;
+  name: string;
+  slug: string;
+  status: "Active" | "Inactive";
+  ownerEmail?: string;
+  members?: Array<{ userId: string; email: string; role: string; permissions: Record<string, boolean> }>;
+  createdAtUtc?: string;
+  updatedAtUtc?: string;
+};
+
+export type MarketingAccount = {
+  id: string;
+  provider: string;
+  accountName: string;
+  accountId?: string;
+  status: "Connected" | "NeedsAuth" | "Disabled";
+  connectedBy?: string;
+  createdAtUtc?: string;
+  updatedAtUtc?: string;
+};
+
+export type MarketingCampaign = {
+  id: string;
+  name: string;
+  channel: string;
+  status: "Draft" | "Scheduled" | "Active" | "Paused" | "Completed";
+  objective?: string;
+  audience?: string;
+  content?: string;
+  scheduledAt?: string;
+  accountIds?: string[];
+  trackingCode?: string;
+  createdAtUtc?: string;
+  updatedAtUtc?: string;
+};
+
+export type MarketingTracking = {
+  metaPixelId?: string;
+  googleTagId?: string;
+  googleAnalyticsId?: string;
+  defaultUtmSource?: string;
+  defaultUtmMedium?: string;
+  defaultUtmCampaign?: string;
+};
+
 export function getAuthToken() {
   return localStorage.getItem(authTokenKey);
 }

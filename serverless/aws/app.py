@@ -168,10 +168,39 @@ def handler(event, _context):
         if path.startswith("/api/workspace/users/") and method == "PUT":
             member_id = path.split("/")[4]
             return response(200, update_workspace_user(context, member_id, body))
+        if path == "/api/workspace/roles" and method == "GET":
+            return response(200, list_workspace_roles(context))
+        if path == "/api/workspace/roles" and method == "POST":
+            return response(201, create_workspace_role(context, body))
+        if path.startswith("/api/workspace/roles/") and method == "PUT":
+            role_id = path.split("/")[4]
+            return response(200, update_workspace_role(context, role_id, body))
+        if path == "/api/workspace/subaccounts" and method == "GET":
+            return response(200, list_subaccounts(context))
+        if path == "/api/workspace/subaccounts" and method == "POST":
+            return response(201, create_subaccount(context, body))
+        if path.startswith("/api/workspace/subaccounts/") and method == "PUT":
+            subaccount_id = path.split("/")[4]
+            return response(200, update_subaccount(context, subaccount_id, body))
         if path == "/api/workspace/white-label" and method == "GET":
             return response(200, get_white_label(context["workspaceSlug"]))
         if path == "/api/workspace/white-label" and method == "PUT":
             return response(200, update_white_label(context, body))
+        if path == "/api/marketing/accounts" and method == "GET":
+            return response(200, list_marketing_accounts(context["workspaceSlug"]))
+        if path == "/api/marketing/accounts" and method == "POST":
+            return response(201, create_marketing_account(context, body))
+        if path == "/api/marketing/campaigns" and method == "GET":
+            return response(200, list_marketing_campaigns(context["workspaceSlug"]))
+        if path == "/api/marketing/campaigns" and method == "POST":
+            return response(201, create_marketing_campaign(context, body))
+        if path.startswith("/api/marketing/campaigns/") and method == "PUT":
+            campaign_id = path.split("/")[3]
+            return response(200, update_marketing_campaign(context, campaign_id, body))
+        if path == "/api/marketing/tracking" and method == "GET":
+            return response(200, get_marketing_tracking(context["workspaceSlug"]))
+        if path == "/api/marketing/tracking" and method == "PUT":
+            return response(200, update_marketing_tracking(context, body))
         return response(404, {"error": "Not found"})
     except ValueError as exc:
         return response(400, {"error": str(exc)})
@@ -1228,6 +1257,144 @@ def update_white_label(context, data):
     workspace["whiteLabel"] = clean
     workspace["updatedAtUtc"] = datetime.utcnow().isoformat() + "Z"
     table.put_item(Item=workspace)
+    return clean
+
+
+def role_shape(item):
+    return {k: item.get(k) for k in ["id", "name", "description", "permissions", "system", "createdAtUtc", "updatedAtUtc"]}
+
+
+def list_workspace_roles(context):
+    require_workspace_admin(context)
+    system_roles = [{"id": name, "name": name, "description": "System role", "permissions": permissions, "system": True} for name, permissions in DEFAULT_ROLE_PERMISSIONS.items()]
+    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(context["workspaceSlug"])) & Key("sk").begins_with("ROLE#"))
+    return system_roles + [role_shape(item) for item in result.get("Items", [])]
+
+
+def create_workspace_role(context, data):
+    require_workspace_admin(context)
+    name = str(data.get("name", "")).strip()[:80]
+    if not name:
+        raise ValueError("Role name is required.")
+    if name in DEFAULT_ROLE_PERMISSIONS:
+        raise ValueError("System role already exists.")
+    role_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat() + "Z"
+    item = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"ROLE#{role_id}", "entity": "workspaceRole", "id": role_id, "name": name, "description": str(data.get("description", "")).strip()[:500], "permissions": clean_permissions(data, "Staff"), "system": False, "createdAtUtc": now, "updatedAtUtc": now}
+    table.put_item(Item=item)
+    return role_shape(item)
+
+
+def update_workspace_role(context, role_id, data):
+    require_workspace_admin(context)
+    current = table.get_item(Key={"pk": workspace_pk(context["workspaceSlug"]), "sk": f"ROLE#{role_id}"}).get("Item")
+    if not current:
+        raise ValueError("Role not found.")
+    updated = {**current, "name": str(data.get("name", current.get("name", ""))).strip()[:80], "description": str(data.get("description", current.get("description", ""))).strip()[:500], "permissions": clean_permissions(data, "Staff"), "updatedAtUtc": datetime.utcnow().isoformat() + "Z"}
+    table.put_item(Item=updated)
+    return role_shape(updated)
+
+
+def subaccount_shape(item):
+    return {k: item.get(k) for k in ["id", "name", "slug", "status", "ownerEmail", "members", "createdAtUtc", "updatedAtUtc"]}
+
+
+def list_subaccounts(context):
+    require_workspace_admin(context)
+    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(context["workspaceSlug"])) & Key("sk").begins_with("SUBACCOUNT#"))
+    return sorted([subaccount_shape(item) for item in result.get("Items", [])], key=lambda item: item.get("createdAtUtc", ""))
+
+
+def clean_subaccount(data, current=None):
+    name = str(data.get("name", current.get("name", "") if current else "")).strip()
+    if not name:
+        raise ValueError("Subaccount name is required.")
+    slug = slugify(str(data.get("slug", current.get("slug", name) if current else name)))
+    status = data.get("status", current.get("status", "Active") if current else "Active")
+    return {"name": name[:120], "slug": slug, "status": status if status in {"Active", "Inactive"} else "Active", "ownerEmail": normalize_email(str(data.get("ownerEmail", current.get("ownerEmail", "") if current else ""))) if data.get("ownerEmail", current.get("ownerEmail", "") if current else "") else "", "members": data.get("members", current.get("members", []) if current else []) if isinstance(data.get("members", current.get("members", []) if current else []), list) else []}
+
+
+def create_subaccount(context, data):
+    require_workspace_admin(context)
+    subaccount_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat() + "Z"
+    item = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"SUBACCOUNT#{subaccount_id}", "entity": "subaccount", "id": subaccount_id, **clean_subaccount(data), "createdAtUtc": now, "updatedAtUtc": now}
+    table.put_item(Item=item)
+    return subaccount_shape(item)
+
+
+def update_subaccount(context, subaccount_id, data):
+    require_workspace_admin(context)
+    current = table.get_item(Key={"pk": workspace_pk(context["workspaceSlug"]), "sk": f"SUBACCOUNT#{subaccount_id}"}).get("Item")
+    if not current:
+        raise ValueError("Subaccount not found.")
+    updated = {**current, **clean_subaccount(data, current), "updatedAtUtc": datetime.utcnow().isoformat() + "Z"}
+    table.put_item(Item=updated)
+    return subaccount_shape(updated)
+
+
+def marketing_account_shape(item):
+    return {k: item.get(k) for k in ["id", "provider", "accountName", "accountId", "status", "connectedBy", "createdAtUtc", "updatedAtUtc"]}
+
+
+def list_marketing_accounts(workspace_slug):
+    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("MKTACCOUNT#"))
+    return sorted([marketing_account_shape(item) for item in result.get("Items", [])], key=lambda item: item.get("createdAtUtc", ""))
+
+
+def create_marketing_account(context, data):
+    account_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat() + "Z"
+    status = data.get("status", "NeedsAuth")
+    item = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"MKTACCOUNT#{account_id}", "entity": "marketingAccount", "id": account_id, "provider": str(data.get("provider", "Meta"))[:40], "accountName": str(data.get("accountName", "")).strip()[:120], "accountId": str(data.get("accountId", "")).strip()[:120], "status": status if status in {"Connected", "NeedsAuth", "Disabled"} else "NeedsAuth", "connectedBy": context["email"], "createdAtUtc": now, "updatedAtUtc": now}
+    if not item["accountName"]:
+        raise ValueError("Account name is required.")
+    table.put_item(Item=item)
+    return marketing_account_shape(item)
+
+
+def campaign_shape(item):
+    return {k: item.get(k) for k in ["id", "name", "channel", "status", "objective", "audience", "content", "scheduledAt", "accountIds", "trackingCode", "createdAtUtc", "updatedAtUtc"]}
+
+
+def list_marketing_campaigns(workspace_slug):
+    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("MKTCAMPAIGN#"))
+    return sorted([campaign_shape(item) for item in result.get("Items", [])], key=lambda item: item.get("createdAtUtc", ""), reverse=True)
+
+
+def clean_campaign(data, current=None):
+    name = str(data.get("name", current.get("name", "") if current else "")).strip()
+    if not name:
+        raise ValueError("Campaign name is required.")
+    status = data.get("status", current.get("status", "Draft") if current else "Draft")
+    return {"name": name[:140], "channel": str(data.get("channel", current.get("channel", "Social") if current else "Social"))[:40], "status": status if status in {"Draft", "Scheduled", "Active", "Paused", "Completed"} else "Draft", "objective": str(data.get("objective", current.get("objective", "") if current else "")).strip()[:500], "audience": str(data.get("audience", current.get("audience", "") if current else "")).strip()[:500], "content": str(data.get("content", current.get("content", "") if current else "")).strip()[:5000], "scheduledAt": str(data.get("scheduledAt", current.get("scheduledAt", "") if current else "")).strip()[:40], "accountIds": data.get("accountIds", current.get("accountIds", []) if current else []) if isinstance(data.get("accountIds", current.get("accountIds", []) if current else []), list) else [], "trackingCode": str(data.get("trackingCode", current.get("trackingCode", "") if current else "")).strip()[:500]}
+
+
+def create_marketing_campaign(context, data):
+    campaign_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat() + "Z"
+    item = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"MKTCAMPAIGN#{campaign_id}", "entity": "marketingCampaign", "id": campaign_id, **clean_campaign(data), "createdAtUtc": now, "updatedAtUtc": now}
+    table.put_item(Item=item)
+    return campaign_shape(item)
+
+
+def update_marketing_campaign(context, campaign_id, data):
+    current = table.get_item(Key={"pk": workspace_pk(context["workspaceSlug"]), "sk": f"MKTCAMPAIGN#{campaign_id}"}).get("Item")
+    if not current:
+        raise ValueError("Campaign not found.")
+    updated = {**current, **clean_campaign(data, current), "updatedAtUtc": datetime.utcnow().isoformat() + "Z"}
+    table.put_item(Item=updated)
+    return campaign_shape(updated)
+
+
+def get_marketing_tracking(workspace_slug):
+    item = table.get_item(Key={"pk": workspace_pk(workspace_slug), "sk": "MARKETING#TRACKING"}).get("Item") or {}
+    return item.get("settings", {})
+
+
+def update_marketing_tracking(context, data):
+    clean = {key: str(data.get(key, "")).strip()[:160] for key in ["metaPixelId", "googleTagId", "googleAnalyticsId", "defaultUtmSource", "defaultUtmMedium", "defaultUtmCampaign"]}
+    table.put_item(Item={"pk": workspace_pk(context["workspaceSlug"]), "sk": "MARKETING#TRACKING", "entity": "marketingTracking", "settings": clean, "updatedAtUtc": datetime.utcnow().isoformat() + "Z"})
     return clean
 
 
