@@ -130,7 +130,8 @@ const customFieldTypes = [
 ];
 
 function Router() {
-  const siteRoute = new URLSearchParams(window.location.search).get("site");
+  const pathParts = window.location.pathname.split("/").filter(Boolean);
+  const siteRoute = new URLSearchParams(window.location.search).get("site") || (pathParts.length === 2 && pathParts[0] !== "book" ? `${pathParts[0]}/${pathParts[1]}` : "");
   if (siteRoute) return <PublicSitePage siteRoute={siteRoute} />;
   return window.location.pathname.startsWith("/book/") ? <PublicBookingPage /> : <AdminApp />;
 }
@@ -154,6 +155,7 @@ function AdminApp() {
   const [editingAutomationId, setEditingAutomationId] = useState<string | null>(null);
   const [siteForm, setSiteForm] = useState<Omit<SitePage, "id">>(emptySitePage);
   const [editingSitePageId, setEditingSitePageId] = useState<string | null>(null);
+  const [selectedSiteSectionId, setSelectedSiteSectionId] = useState(emptySitePage.sections[0].id);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [contactForm, setContactForm] = useState<Omit<Contact, "id">>(emptyContact);
   const [contactTasks, setContactTasks] = useState<ContactTask[]>([]);
@@ -611,6 +613,7 @@ function AdminApp() {
       ] }
     };
     setSiteForm(presets[template] ?? presets.coach);
+    setSelectedSiteSectionId((presets[template] ?? presets.coach).sections[0].id);
     setEditingSitePageId(null);
     setActiveTab("sites");
   }
@@ -628,7 +631,9 @@ function AdminApp() {
   }
 
   function addSiteSection(type: SitePage["sections"][number]["type"]) {
-    setSiteForm({ ...siteForm, sections: [...siteForm.sections, newSiteSection(type)] });
+    const section = newSiteSection(type);
+    setSiteForm({ ...siteForm, sections: [...siteForm.sections, section] });
+    setSelectedSiteSectionId(section.id);
   }
 
   function moveSiteSection(index: number, direction: -1 | 1) {
@@ -636,6 +641,17 @@ function AdminApp() {
     const target = index + direction;
     if (target < 0 || target >= next.length) return;
     [next[index], next[target]] = [next[target], next[index]];
+    setSiteForm({ ...siteForm, sections: next });
+  }
+
+  function reorderSiteSection(fromId: string, toId: string) {
+    if (fromId === toId) return;
+    const next = [...siteForm.sections];
+    const fromIndex = next.findIndex((section) => section.id === fromId);
+    const toIndex = next.findIndex((section) => section.id === toId);
+    if (fromIndex < 0 || toIndex < 0) return;
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
     setSiteForm({ ...siteForm, sections: next });
   }
 
@@ -665,6 +681,7 @@ function AdminApp() {
   function editSitePage(page: SitePage) {
     setEditingSitePageId(page.id);
     setSiteForm({ name: page.name, slug: page.slug, status: page.status, template: page.template, seoTitle: page.seoTitle, seoDescription: page.seoDescription, sections: page.sections });
+    setSelectedSiteSectionId(page.sections[0]?.id ?? "");
     setActiveTab("sites");
   }
 
@@ -1299,23 +1316,32 @@ function AdminApp() {
                   <button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveSitePage}><Save size={16} /> Save page</button>
                   {editingSitePageId && <button className="rounded-md border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-bold text-rose-700" onClick={() => sitePages.find((page) => page.id === editingSitePageId) && deleteSitePage(sitePages.find((page) => page.id === editingSitePageId)!)}>Delete</button>}
                 </div>
-                {editingSitePageId && <a className="mt-3 inline-flex items-center gap-2 text-sm font-bold text-[var(--theme-primary)]" target="_blank" href={`/?site=${authUser.workspaceSlug}/${siteForm.slug}`}><ExternalLink size={15} /> Open published URL</a>}
+                {editingSitePageId && <a className="mt-3 inline-flex items-center gap-2 text-sm font-bold text-[var(--theme-primary)]" target="_blank" href={`/${authUser.workspaceSlug}/${siteForm.slug}`}><ExternalLink size={15} /> Open published URL</a>}
               </Panel>
             </div>
             <Panel title="WYSIWYG Editor" icon={<ExternalLink size={18} />}>
               <div className="mb-4 flex flex-wrap gap-2">
                 {siteSectionTypes.map((type) => <button key={type} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-black capitalize hover:border-[var(--theme-primary)]" onClick={() => addSiteSection(type)}><Plus size={13} className="mr-1 inline" />{type}</button>)}
               </div>
-              <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
+              <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
+                <SitePagePreview page={siteForm} theme={theme} selectedSectionId={selectedSiteSectionId} onSelectSection={setSelectedSiteSectionId} onReorderSection={reorderSiteSection} />
                 <div className="space-y-4">
-                  {siteForm.sections.map((section, index) => (
+                  {(() => {
+                    const section = siteForm.sections.find((item) => item.id === selectedSiteSectionId) ?? siteForm.sections[0];
+                    const index = siteForm.sections.findIndex((item) => item.id === section?.id);
+                    if (!section) return <div className="rounded-md border border-dashed border-[#cbd5e1] p-4 text-sm text-[#64748b]">Add a section to start building.</div>;
+                    return (
                     <div key={section.id} className="rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
                       <div className="mb-3 flex items-center justify-between gap-2">
-                        <div className="text-sm font-black capitalize">{section.type} section</div>
+                        <div className="text-sm font-black capitalize">Selected {section.type}</div>
                         <div className="flex gap-1">
                           <button className="rounded border border-[#cbd5e1] px-2 py-1 text-xs" onClick={() => moveSiteSection(index, -1)}>Up</button>
                           <button className="rounded border border-[#cbd5e1] px-2 py-1 text-xs" onClick={() => moveSiteSection(index, 1)}>Down</button>
-                          <button className="rounded border border-rose-200 px-2 py-1 text-xs text-rose-700" onClick={() => setSiteForm({ ...siteForm, sections: siteForm.sections.filter((item) => item.id !== section.id) })}>Delete</button>
+                          <button className="rounded border border-rose-200 px-2 py-1 text-xs text-rose-700" onClick={() => {
+                            const remaining = siteForm.sections.filter((item) => item.id !== section.id);
+                            setSiteForm({ ...siteForm, sections: remaining });
+                            setSelectedSiteSectionId(remaining[0]?.id ?? "");
+                          }}>Delete</button>
                         </div>
                       </div>
                       <div className="grid gap-3 md:grid-cols-2">
@@ -1358,9 +1384,9 @@ function AdminApp() {
                         <Field label="Button URL" value={section.buttonUrl ?? ""} onChange={(value) => updateSiteSection(section.id, { buttonUrl: value })} />
                       </div>}
                     </div>
-                  ))}
+                    );
+                  })()}
                 </div>
-                <SitePagePreview page={siteForm} theme={theme} />
               </div>
             </Panel>
           </section>}
@@ -1904,15 +1930,15 @@ function AutomationCanvas({
   );
 }
 
-function SitePagePreview({ page, theme, publicMode = false }: { page: Omit<SitePage, "id"> | SitePage; theme: ThemeConfig; publicMode?: boolean }) {
+function SitePagePreview({ page, theme, publicMode = false, selectedSectionId = "", onSelectSection, onReorderSection }: { page: Omit<SitePage, "id"> | SitePage; theme: ThemeConfig; publicMode?: boolean; selectedSectionId?: string; onSelectSection?: (id: string) => void; onReorderSection?: (fromId: string, toId: string) => void }) {
   return (
     <div className={`${publicMode ? "" : "max-h-[760px] overflow-auto rounded-md border border-[#dde3ec]"} bg-[var(--theme-background)] text-[var(--theme-text)]`} style={themeStyle(theme)}>
-      {page.sections.map((section) => <RenderSiteSection key={section.id} section={section} />)}
+      {page.sections.map((section) => <RenderSiteSection key={section.id} section={section} selected={selectedSectionId === section.id} editable={Boolean(onSelectSection)} onSelect={() => onSelectSection?.(section.id)} onDropSection={(fromId) => onReorderSection?.(fromId, section.id)} />)}
     </div>
   );
 }
 
-function RenderSiteSection({ section }: { section: SitePage["sections"][number] }) {
+function RenderSiteSection({ section, selected = false, editable = false, onSelect, onDropSection }: { section: SitePage["sections"][number]; selected?: boolean; editable?: boolean; onSelect?: () => void; onDropSection?: (fromId: string) => void }) {
   const bg = section.background === "primary" ? "bg-[var(--theme-primary)] text-white" : section.background === "dark" ? "bg-[#16202a] text-white" : section.background === "light" ? "bg-[#f8fafc]" : "bg-white";
   const pad = section.padding === "compact" ? "py-8" : section.padding === "spacious" ? "py-20 md:py-28" : "py-12 md:py-16";
   const align = section.align === "center" ? "text-center items-center" : "text-left items-start";
@@ -1926,7 +1952,15 @@ function RenderSiteSection({ section }: { section: SitePage["sections"][number] 
     </div>
   );
   return (
-    <section className={`${bg} px-6 ${pad} md:px-10`}>
+    <section
+      draggable={editable}
+      onClick={(event) => { if (editable) { event.preventDefault(); onSelect?.(); } }}
+      onDragStart={(event) => event.dataTransfer.setData("text/plain", section.id)}
+      onDragOver={(event) => { if (editable) event.preventDefault(); }}
+      onDrop={(event) => { if (editable) { event.preventDefault(); onDropSection?.(event.dataTransfer.getData("text/plain")); } }}
+      className={`${bg} relative px-6 ${pad} md:px-10 ${editable ? "cursor-pointer transition hover:outline hover:outline-2 hover:outline-[var(--theme-accent)]" : ""} ${selected ? "outline outline-4 outline-[var(--theme-primary)]" : ""}`}
+    >
+      {editable && <div className="absolute right-3 top-3 z-10 rounded-md bg-white/95 px-2 py-1 text-xs font-black text-[#16202a] shadow-sm">Drag / click to edit</div>}
       <div className="mx-auto max-w-6xl">
         {section.type === "split" ? <div className="grid gap-8 md:grid-cols-2 md:items-center">{content}<SiteImage url={section.imageUrl} /></div> : section.type === "image" ? <div className="space-y-6">{content}<SiteImage url={section.imageUrl} /></div> : section.type === "columns" ? <>{content}<div className="mt-8 grid gap-4 md:grid-cols-3">{(section.columns ?? []).map((column, index) => <div key={`${column.title}-${index}`} className="rounded-md border border-[#dde3ec] bg-white p-5 text-[#16202a] shadow-sm"><h3 className="font-black">{column.title}</h3><p className="mt-2 text-sm leading-6 text-[#64748b]">{column.body}</p></div>)}</div></> : <>{content}{(section.items ?? []).length > 0 && <div className="mt-8 grid gap-3 md:grid-cols-3">{(section.items ?? []).map((item) => <div key={item} className="rounded-md border border-[#dde3ec] bg-white p-4 font-bold text-[#16202a]">{item}</div>)}</div>}</>}
       </div>
