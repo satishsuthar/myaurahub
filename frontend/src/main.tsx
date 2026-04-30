@@ -124,6 +124,21 @@ type AutomationForm = {
   isActive: boolean;
 };
 
+function configTextToObject(configText = "") {
+  return Object.fromEntries(configText.split("\n").map((line) => {
+    const [key, ...valueParts] = line.split("=");
+    return [key.trim(), valueParts.join("=").trim()];
+  }).filter(([key]) => key));
+}
+
+function configObjectToText(config: Record<string, string>) {
+  return Object.entries(config ?? {}).map(([key, value]) => `${key}=${value}`).join("\n");
+}
+
+function updateConfigText(configText: string, key: string, value: string) {
+  return configObjectToText({ ...configTextToObject(configText), [key]: value });
+}
+
 const emptyAutomation: AutomationForm = {
   name: "",
   description: "",
@@ -527,14 +542,11 @@ function AdminApp() {
   }
 
   function parseActionConfig(configText: string) {
-    return Object.fromEntries(configText.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
-      const [key, ...valueParts] = line.split("=");
-      return [key.trim(), valueParts.join("=").trim()];
-    }).filter(([key]) => key));
+    return configTextToObject(configText);
   }
 
   function serializeActionConfig(config: Record<string, string>) {
-    return Object.entries(config ?? {}).map(([key, value]) => `${key}=${value}`).join("\n");
+    return configObjectToText(config);
   }
 
   function newAutomationAction(type = "InternalNotification"): AutomationFormAction {
@@ -655,6 +667,10 @@ function AdminApp() {
     setAutomationForm({ ...automationForm, actions: updateAutomationActions(automationForm.actions, id, patch) });
   }
 
+  function changeAutomationActionType(id: string, type: string) {
+    setAutomationForm({ ...automationForm, actions: updateAutomationActions(automationForm.actions, id, { type, configText: newAutomationAction(type).configText }) });
+  }
+
   function editAutomation(rule: AutomationRule) {
     const triggers = (rule.triggers?.length ? rule.triggers : [rule.trigger]).map((trigger, index) => {
       const filterEntries = Object.entries(trigger.filters ?? {});
@@ -722,26 +738,31 @@ function AdminApp() {
     const business = authUser?.workspaceName ?? "Your Business";
     const presets: Record<string, Omit<SitePage, "id">> = {
       blank: { ...emptySitePage, name: "Untitled Page", slug: "untitled-page", template, seoTitle: "Untitled Page", seoDescription: "", sections: [newSiteSection("hero")] },
-      coach: { ...emptySitePage, name: `${business} Coaching Page`, slug: slugifyLocal(`${business} coaching`), template, seoTitle: `${business} Coaching`, sections: [
-        { id: "hero", type: "hero", eyebrow: "Coaching and consulting", headline: `Grow with ${business}`, body: "A focused page for leads to understand your offer and book the next conversation.", buttonText: "Book a consultation", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call` },
-        { id: "features", type: "features", headline: "How we help", body: "A simple path from interest to clarity.", items: ["Strategy sessions", "Personalized action plans", "Accountability and follow-up"] },
-        { id: "cta", type: "cta", headline: "Take the next step", body: "Book a time that works for you.", buttonText: "Schedule now", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call` }
+      coach: { ...emptySitePage, name: `${business} High-Converting Coach Page`, slug: slugifyLocal(`${business} coaching`), template, seoTitle: `${business} Coaching`, sections: [
+        { id: "hero", type: "hero", eyebrow: "Private coaching for people ready for change", headline: "Stop guessing what to do next. Build a clear plan and follow through.", body: "A conversion-focused coaching page that leads visitors from pain, to proof, to a simple booked call.", buttonText: "Book a free clarity call", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call`, background: "light", align: "center", padding: "spacious" },
+        { id: "problem", type: "columns", headline: "You do not need more random advice", body: "Your visitor should feel understood before they are asked to book.", columns: [{ title: "Too many options", body: "They have tried tactics, videos, programs, and still feel stuck." }, { title: "No clear sequence", body: "They know pieces of the answer, but not the right next move." }, { title: "Low accountability", body: "They start strong, then life pulls them back into old patterns." }], background: "white" },
+        { id: "outcomes", type: "features", headline: "What changes when we work together", body: "Turn the offer into outcomes they can picture.", items: ["A clear diagnosis of what is blocking progress", "A practical weekly plan they can actually execute", "Accountability, review, and course correction"] },
+        { id: "process", type: "columns", headline: "A simple path to momentum", body: "Three steps make the decision feel safe.", columns: [{ title: "1. Clarity call", body: "Understand goals, constraints, and fit." }, { title: "2. Personal roadmap", body: "Create a plan for the next measurable milestone." }, { title: "3. Weekly execution", body: "Track progress and adjust before momentum drops." }], background: "light" },
+        { id: "cta", type: "cta", headline: "Ready to find your next best step?", body: "Book a short call. No pressure, just clarity.", buttonText: "Book your clarity call", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call`, background: "primary", align: "center" }
       ] },
       performance: { ...emptySitePage, name: `${business} Performance Coach Page`, slug: slugifyLocal(`${business} performance coaching`), template, seoTitle: `${business} Performance Coaching`, theme: { ...themePresets.find((item) => item.preset === "minimal")!, primary: "#111827", secondary: "#dc2626", accent: "#facc15", background: "#f8fafc", displayFont: "Montserrat", bodyFont: "Inter" }, sections: [
         { id: "hero", type: "hero", eyebrow: "Performance coaching", headline: "You are not broken. You are ready to build.", body: "A bold coaching page for people ready to take ownership of health, mindset, strength, and identity.", buttonText: "Book your call", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call`, background: "dark", align: "center", padding: "spacious" },
         { id: "belief", type: "columns", headline: "What makes this different", body: "A structured identity-based approach inspired by belief, nourishment, and building strength.", background: "white", columns: [{ title: "Belief", body: "Belief shapes behavior. Behavior forms identity. Identity drives everything." }, { title: "Nourish", body: "Being nourished is about thriving, recovery, and capacity." }, { title: "Build", body: "Your life is not templated. Your training and growth should not be either." }] },
         { id: "story", type: "text", headline: "A new paradigm", body: "You do not create the life you want by chasing the next quick fix. You build it by becoming the person who can live it. This is coaching for the next chapter, not the next 30 days.", background: "light", align: "center", padding: "spacious" },
+        { id: "offer", type: "features", headline: "Built for people who are done restarting", body: "Make the offer tangible and outcome-led.", items: ["Identity-based coaching", "Training and lifestyle rhythm", "Weekly review and accountability"], background: "white" },
         { id: "cta", type: "cta", headline: "Let's start building together", body: "Book a call and take the first step.", buttonText: "Book your call", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call`, background: "primary", align: "center" }
       ] },
       clinic: { ...emptySitePage, name: `${business} Clinic Page`, slug: slugifyLocal(`${business} clinic`), template, seoTitle: `${business} Clinic`, sections: [
-        { id: "hero", type: "hero", eyebrow: "Care made simple", headline: `Book care with ${business}`, body: "Explain services, build trust, and help patients book the right appointment.", buttonText: "Book appointment", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call` },
-        { id: "features", type: "features", headline: "Services", body: "Show the most important reasons to choose your practice.", items: ["Initial consultations", "Treatment plans", "Follow-up support"] },
-        { id: "cta", type: "cta", headline: "Ready to feel better?", body: "Choose a time online.", buttonText: "Find a time", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call` }
+        { id: "hero", type: "hero", eyebrow: "Trusted care with simple online booking", headline: `Feel better with a clear treatment plan from ${business}`, body: "A conversion-focused clinic page that builds trust, explains the first visit, and moves patients to book.", buttonText: "Book your first appointment", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call`, background: "light", align: "center", padding: "spacious" },
+        { id: "services", type: "features", headline: "Choose the right care", body: "Show the most important reasons to choose your practice.", items: ["Initial assessment", "Treatment plan", "Follow-up support"] },
+        { id: "trust", type: "columns", headline: "Why patients book", body: "Reduce friction and answer common doubts.", columns: [{ title: "Clear diagnosis", body: "Know what is happening and what to do next." }, { title: "Practical treatment", body: "Simple steps between sessions." }, { title: "Easy scheduling", body: "Book online in under a minute." }], background: "white" },
+        { id: "cta", type: "cta", headline: "Ready to feel better?", body: "Choose a time online.", buttonText: "Find a time", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call`, background: "primary", align: "center" }
       ] },
       personal: { ...emptySitePage, name: `${business} Personal Brand Page`, slug: slugifyLocal(`${business} personal brand`), template, seoTitle: business, sections: [
-        { id: "hero", type: "hero", eyebrow: "Personal brand", headline: `Work with ${business}`, body: "A polished page for your audience, offers, and booking links.", buttonText: "Start here", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call` },
-        { id: "features", type: "features", headline: "What I do", body: "Highlight your core offers and credibility.", items: ["Speaking and workshops", "Consulting", "Digital products"] },
-        { id: "cta", type: "cta", headline: "Let's talk", body: "Book a short call to explore fit.", buttonText: "Book now", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call` }
+        { id: "hero", type: "hero", eyebrow: "For audiences who are ready to work deeper", headline: `Turn trust in ${business} into booked calls and clients`, body: "A personal-brand page designed to move followers from interest to a clear next step.", buttonText: "Start with a call", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call`, background: "light", align: "center", padding: "spacious" },
+        { id: "authority", type: "features", headline: "How I can help", body: "Package expertise into clear paths.", items: ["Private advisory", "Workshops and speaking", "Digital programs"] },
+        { id: "fit", type: "columns", headline: "Best fit if you want", body: "Qualify the right clients before they book.", columns: [{ title: "Clarity", body: "Turn scattered goals into a focused plan." }, { title: "Execution", body: "Get help implementing, not just learning." }, { title: "Leverage", body: "Build assets, systems, and offers that compound." }], background: "white" },
+        { id: "cta", type: "cta", headline: "Let's see if this is a fit", body: "Book a short call and we will map the next step.", buttonText: "Book now", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call`, background: "primary", align: "center" }
       ] }
     };
     setSiteForm(presets[template] ?? presets.coach);
@@ -1362,14 +1383,14 @@ function AdminApp() {
                       {automationForm.actions.length > 1 && <button className="rounded-md border border-rose-200 p-2 text-rose-700" onClick={() => setAutomationForm({ ...automationForm, actions: removeAutomationActionById(automationForm.actions, action.id) })}><Trash2 size={15} /></button>}
                     </div>
                     <label className="text-sm font-bold text-[#334155]">Action type
-                      <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={action.type} onChange={(event) => updateAutomationAction(action.id, { type: event.target.value })}>
+                      <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={action.type} onChange={(event) => changeAutomationActionType(action.id, event.target.value)}>
                         {automationActionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </select>
                     </label>
-                    <textarea className="mt-3 min-h-20 w-full rounded-md border border-[#cbd5e1] bg-white p-3 font-mono text-xs" placeholder={"key=value\nanotherKey=value"} value={action.configText} onChange={(event) => updateAutomationAction(action.id, { configText: event.target.value })} />
+                    <ActionConfigEditor action={action} onChange={(configText) => updateAutomationAction(action.id, { configText })} />
                     {(action.type === "IfElse" || (action.then?.length || action.else?.length)) && <div className="mt-3 grid gap-3 md:grid-cols-2">
-                      <NestedActionList title="Then / yes path" actions={action.then ?? []} onAdd={() => addNestedAutomationAction(action.id, "then")} onUpdate={updateAutomationAction} onRemove={(id) => setAutomationForm({ ...automationForm, actions: removeAutomationActionById(automationForm.actions, id) })} />
-                      <NestedActionList title="Else / no path" actions={action.else ?? []} onAdd={() => addNestedAutomationAction(action.id, "else")} onUpdate={updateAutomationAction} onRemove={(id) => setAutomationForm({ ...automationForm, actions: removeAutomationActionById(automationForm.actions, id) })} />
+                      <NestedActionList title="Then / yes path" actions={action.then ?? []} onAdd={() => addNestedAutomationAction(action.id, "then")} onTypeChange={changeAutomationActionType} onUpdate={updateAutomationAction} onRemove={(id) => setAutomationForm({ ...automationForm, actions: removeAutomationActionById(automationForm.actions, id) })} />
+                      <NestedActionList title="Else / no path" actions={action.else ?? []} onAdd={() => addNestedAutomationAction(action.id, "else")} onTypeChange={changeAutomationActionType} onUpdate={updateAutomationAction} onRemove={(id) => setAutomationForm({ ...automationForm, actions: removeAutomationActionById(automationForm.actions, id) })} />
                     </div>}
                   </div>
                 ))}
@@ -2152,7 +2173,7 @@ function AutomationStepTree({
   );
 }
 
-function NestedActionList({ title, actions, onAdd, onUpdate, onRemove }: { title: string; actions: AutomationFormAction[]; onAdd: () => void; onUpdate: (id: string, patch: Partial<AutomationFormAction>) => void; onRemove: (id: string) => void }) {
+function NestedActionList({ title, actions, onAdd, onTypeChange, onUpdate, onRemove }: { title: string; actions: AutomationFormAction[]; onAdd: () => void; onTypeChange: (id: string, type: string) => void; onUpdate: (id: string, patch: Partial<AutomationFormAction>) => void; onRemove: (id: string) => void }) {
   return (
     <div className="rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -2164,15 +2185,72 @@ function NestedActionList({ title, actions, onAdd, onUpdate, onRemove }: { title
         {actions.map((action) => (
           <div key={action.id} className="rounded-md border border-[#dde3ec] bg-white p-2">
             <div className="mb-2 flex items-center justify-between gap-2">
-              <select className="w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-xs font-bold" value={action.type} onChange={(event) => onUpdate(action.id, { type: event.target.value })}>
+              <select className="w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-xs font-bold" value={action.type} onChange={(event) => onTypeChange(action.id, event.target.value)}>
                 {automationActionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
               <button className="rounded-md border border-rose-200 p-2 text-rose-700" onClick={() => onRemove(action.id)}><Trash2 size={13} /></button>
             </div>
-            <textarea className="min-h-16 w-full rounded-md border border-[#cbd5e1] bg-white p-2 font-mono text-xs" value={action.configText} onChange={(event) => onUpdate(action.id, { configText: event.target.value })} />
+            <ActionConfigEditor action={action} compact onChange={(configText) => onUpdate(action.id, { configText })} />
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function ActionConfigEditor({ action, compact = false, onChange }: { action: AutomationFormAction; compact?: boolean; onChange: (configText: string) => void }) {
+  const config = configTextToObject(action.configText);
+  const setValue = (key: string, value: string) => onChange(updateConfigText(action.configText, key, value));
+  const fieldClass = "mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm";
+  const textClass = `${fieldClass} ${compact ? "min-h-16" : "min-h-24"} resize-y`;
+  const hint = {
+    SendEmail: "Sends a personalized email using appointment and contact data.",
+    Wait: "Pauses the workflow for a duration or until a date from the trigger payload.",
+    CreateOpportunity: "Creates a deal from the appointment and contact details.",
+    CallExternalApi: "Sends data to another system.",
+    IfElse: "Splits the workflow into yes/no paths.",
+    TriggerEvent: "Emits a new event that can start another automation."
+  }[action.type] ?? "Configure what this step should do.";
+
+  const input = (key: string, label: string, placeholder = "", type = "text") => (
+    <label className="text-sm font-bold text-[#334155]">{label}
+      <input className={fieldClass} type={type} placeholder={placeholder} value={config[key] ?? ""} onChange={(event) => setValue(key, event.target.value)} />
+    </label>
+  );
+  const textarea = (key: string, label: string, placeholder = "") => (
+    <label className="text-sm font-bold text-[#334155]">{label}
+      <textarea className={textClass} placeholder={placeholder} value={config[key] ?? ""} onChange={(event) => setValue(key, event.target.value)} />
+    </label>
+  );
+  const select = (key: string, label: string, options: string[]) => (
+    <label className="text-sm font-bold text-[#334155]">{label}
+      <select className={fieldClass} value={config[key] ?? options[0]} onChange={(event) => setValue(key, event.target.value)}>
+        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+    </label>
+  );
+
+  let fields: React.ReactNode;
+  if (action.type === "SendEmail") fields = <><div className="grid gap-3 md:grid-cols-2">{input("to", "Recipient", "{{contact.email}")}{input("subject", "Subject", "Reminder: appointment tomorrow")}</div>{textarea("body", "Message", "Hi {{contact.firstName}}, we will see you at {{appointment.startAt}}.")}</>;
+  else if (action.type === "Wait") fields = <div className="grid gap-3 md:grid-cols-2">{input("duration", "Wait duration", "1", "number")}{select("unit", "Unit", ["minutes", "hours", "days"])}{input("until", "Or wait until", "{{appointment.startAt}}")}{input("offsetMinutes", "Offset minutes", "-10", "number")}{input("offsetHours", "Offset hours", "-24", "number")}</div>;
+  else if (action.type === "CreateOpportunity") fields = <div className="grid gap-3 md:grid-cols-2">{input("pipelineId", "Pipeline", "{{defaultPipeline.id}")}{input("stageId", "Stage", "{{defaultStage.id}")}{input("title", "Opportunity title", "{{appointment.name}} - {{contact.fullName}}")}{input("value", "Value", "0", "number")}{input("source", "Source", "Appointment")}</div>;
+  else if (action.type === "MoveOpportunity") fields = <div className="grid gap-3 md:grid-cols-2">{input("opportunityId", "Opportunity", "{{opportunity.id}")}{input("stageId", "Move to stage", "{{stage.id}")}</div>;
+  else if (action.type === "CreateTask") fields = <><div className="grid gap-3 md:grid-cols-2">{input("title", "Task title", "Follow up with {{contact.fullName}}")}{input("dueInDays", "Due in days", "1", "number")}</div>{textarea("description", "Task notes", "Review appointment and prepare next step.")}</>;
+  else if (action.type === "AddContactTag" || action.type === "RemoveContactTag") fields = input("tag", "Tag", "new-client");
+  else if (action.type === "IfElse") fields = <div className="grid gap-3 md:grid-cols-3">{input("condition", "Condition", "{{contact.tags}} contains vip")}{input("trueLabel", "Yes label", "VIP")}{input("falseLabel", "No label", "Standard")}</div>;
+  else if (action.type === "CallExternalApi" || action.type === "Webhook") fields = <><div className="grid gap-3 md:grid-cols-2">{select("method", "Method", ["POST", "PUT", "PATCH", "GET"])}{input("url", "URL", "https://example.com/webhook")}{input("headers.Authorization", "Authorization header", "Bearer token")}</div>{textarea("body", "Request body", "{\"contactId\":\"{{contact.id}}\",\"appointmentId\":\"{{appointment.id}}\"}")}</>;
+  else if (action.type === "TriggerEvent") fields = <div className="grid gap-3 md:grid-cols-2">{input("eventName", "Event name", "AppointmentReminderSent")}{input("payload.appointmentId", "Appointment ID", "{{appointment.id}")}{input("payload.contactId", "Contact ID", "{{contact.id}")}</div>;
+  else if (action.type === "SetData") fields = <div className="grid gap-3 md:grid-cols-2">{input("key", "Data key", "appointmentSummary")}{input("value", "Value", "{{appointment.name}} for {{contact.fullName}}")}</div>;
+  else if (action.type === "StartAutomation" || action.type === "StopAutomation") fields = input("automationId", "Automation", "{{automation.id}}");
+  else fields = textarea("message", "Message / configuration", config.message ?? action.configText);
+
+  return (
+    <div className="mt-3 rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
+      <div className="mb-3 text-xs font-bold text-[#64748b]">{hint}</div>
+      <div className="space-y-3">{fields}</div>
+      {!compact && <div className="mt-3 flex flex-wrap gap-1.5 text-[11px] font-bold text-[#64748b]">
+        {["{{contact.email}}", "{{contact.firstName}}", "{{contact.fullName}}", "{{appointment.name}}", "{{appointment.startAt}}", "{{opportunity.id}}"].map((token) => <button key={token} className="rounded-md border border-[#dde3ec] bg-white px-2 py-1" onClick={() => navigator.clipboard?.writeText(token)}>{token}</button>)}
+      </div>}
     </div>
   );
 }
@@ -2275,7 +2353,7 @@ function DiagramNode({
             <input className="rounded-md border border-current/20 bg-white/90 p-2 text-xs text-[#16202a]" placeholder="Filter field" value={filterKey} onChange={(event) => onChange?.({ filterKey: event.target.value })} />
             <input className="rounded-md border border-current/20 bg-white/90 p-2 text-xs text-[#16202a]" placeholder="Filter value" value={filterValue} onChange={(event) => onChange?.({ filterValue: event.target.value })} />
           </div>}
-          {kind === "action" && !compact && <textarea className="min-h-20 w-full rounded-md border border-current/20 bg-white/90 p-2 font-mono text-xs text-[#16202a]" placeholder={"key=value\nanotherKey=value"} value={configText} onChange={(event) => onChange?.({ configText: event.target.value })} />}
+          {kind === "action" && !compact && <ActionConfigEditor action={{ id: "diagram-action", type, configText }} compact onChange={(nextConfig) => onChange?.({ configText: nextConfig })} />}
         </div>
       ) : (
         <>
