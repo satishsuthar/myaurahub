@@ -64,7 +64,7 @@ const emptyContact: Omit<Contact, "id"> = {
 };
 
 const emptyTask = { title: "", description: "", dueDate: "" };
-const emptyPipeline = { name: "", description: "", stagesText: "New Lead\nQualified\nProposal\nWon" };
+const emptyPipeline = { name: "", description: "", stages: [{ id: "stage-1-new-lead", name: "New Lead" }, { id: "stage-2-qualified", name: "Qualified" }, { id: "stage-3-proposal", name: "Proposal" }, { id: "stage-4-won", name: "Won" }] };
 const emptyOpportunity = { title: "", value: 0, currency: "AUD", contactId: "", expectedCloseDate: "", source: "", notes: "" };
 const automationTriggerOptions = [
   { value: "AppointmentBooked", label: "Appointment booked", module: "Scheduling" },
@@ -253,7 +253,11 @@ function AdminApp() {
   const [unavailability, setUnavailability] = useState<UnavailabilityDate[]>([]);
   const [form, setForm] = useState(defaultAppointment);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"calendars" | "availability" | "bookings" | "schedulingSettings" | "contacts" | "opportunities" | "automations" | "sites" | "marketing" | "team" | "settings" | "profile">("calendars");
+  const [activeTab, setActiveTab] = useState<"calendars" | "availability" | "bookings" | "schedulingSettings" | "contacts" | "opportunities" | "pipelines" | "automations" | "sites" | "marketing" | "team" | "settings" | "profile">("calendars");
+  const [appointmentView, setAppointmentView] = useState<"list" | "editor">("list");
+  const [contactView, setContactView] = useState<"list" | "editor">("list");
+  const [pipelineView, setPipelineView] = useState<"list" | "editor">("list");
+  const [marketingView, setMarketingView] = useState<"campaigns" | "accounts" | "tracking">("campaigns");
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"success" | "error">("success");
   const [savingAppointment, setSavingAppointment] = useState(false);
@@ -341,6 +345,7 @@ function AdminApp() {
       setMessage(editingId ? "Appointment type updated. Customer calendar will use the new settings." : "Appointment type created.");
       setEditingId(null);
       setForm({ ...defaultAppointment, slug: `strategy-session-${Date.now().toString().slice(-5)}` });
+      setAppointmentView("list");
       await load();
     } catch (error) {
       setMessageTone("error");
@@ -551,6 +556,7 @@ function AdminApp() {
     ]);
     setContactTasks(tasks);
     setContactActivity(activity);
+    setContactView("editor");
     setActiveTab("contacts");
   }
 
@@ -561,6 +567,7 @@ function AdminApp() {
     setContactActivity([]);
     setTaskForm(emptyTask);
     setCustomFieldDraft({ name: "", type: "text", value: "", options: "" });
+    setContactView("editor");
     setActiveTab("contacts");
   }
 
@@ -614,7 +621,7 @@ function AdminApp() {
 
   async function savePipeline() {
     const isEditing = Boolean(editingPipelineId);
-    const stages = pipelineForm.stagesText.split("\n").map((name) => name.trim()).filter(Boolean).map((name, index) => ({ id: `stage-${index + 1}-${slugifyLocal(name)}`, name, order: index + 1 }));
+    const stages = pipelineForm.stages.map((stage, index) => ({ id: stage.id || `stage-${index + 1}-${slugifyLocal(stage.name)}`, name: stage.name.trim(), order: index + 1 })).filter((stage) => stage.name);
     if (!pipelineForm.name.trim() || stages.length === 0) {
       setMessageTone("error");
       setMessage("Pipeline name and at least one stage are required.");
@@ -630,6 +637,7 @@ function AdminApp() {
       setPipelineForm(emptyPipeline);
       setEditingPipelineId(null);
       setPipelineModalOpen(false);
+      setPipelineView("list");
       setMessageTone("success");
       setMessage(isEditing ? "Pipeline updated." : "Pipeline created.");
     } catch (error) {
@@ -641,12 +649,22 @@ function AdminApp() {
   function openPipelineModal(pipeline?: Pipeline) {
     if (pipeline) {
       setEditingPipelineId(pipeline.id);
-      setPipelineForm({ name: pipeline.name, description: pipeline.description ?? "", stagesText: pipeline.stages.sort((a, b) => a.order - b.order).map((stage) => stage.name).join("\n") });
+      setPipelineForm({ name: pipeline.name, description: pipeline.description ?? "", stages: pipeline.stages.sort((a, b) => a.order - b.order).map((stage) => ({ id: stage.id, name: stage.name })) });
     } else {
       setEditingPipelineId(null);
       setPipelineForm(emptyPipeline);
     }
+    setPipelineView("editor");
+    setActiveTab("pipelines");
     setPipelineModalOpen(true);
+  }
+
+  function movePipelineStage(index: number, direction: -1 | 1) {
+    const next = [...pipelineForm.stages];
+    const target = index + direction;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    setPipelineForm({ ...pipelineForm, stages: next });
   }
 
   async function deletePipeline(pipeline: Pipeline) {
@@ -1052,6 +1070,7 @@ function AdminApp() {
     setDurationUnit(item.durationMinutes % 60 === 0 ? "hours" : "minutes");
     setIntervalUnit((item.serviceIntervalMinutes ?? 15) % 60 === 0 ? "hours" : "minutes");
     setNoticeUnit(item.minimumNoticeMinutes % 60 === 0 ? "hours" : "minutes");
+    setAppointmentView("editor");
     setActiveTab("calendars");
   }
 
@@ -1114,8 +1133,23 @@ function AdminApp() {
               <ModuleTab label="Settings" active={activeTab === "schedulingSettings"} onClick={() => setActiveTab("schedulingSettings")} />
             </div>
           )}
+          {["opportunities", "pipelines"].includes(activeTab) && (
+            <div className="mb-5 flex flex-wrap gap-2 rounded-md border border-[#dde3ec] bg-white p-2 shadow-sm">
+              <ModuleTab label="Opportunity Board" active={activeTab === "opportunities"} onClick={() => setActiveTab("opportunities")} />
+              <ModuleTab label="Pipelines" active={activeTab === "pipelines"} onClick={() => { setPipelineView("list"); setActiveTab("pipelines"); }} />
+            </div>
+          )}
+          {activeTab === "marketing" && (
+            <div className="mb-5 flex flex-wrap gap-2 rounded-md border border-[#dde3ec] bg-white p-2 shadow-sm">
+              <ModuleTab label="Campaigns" active={marketingView === "campaigns"} onClick={() => setMarketingView("campaigns")} />
+              <ModuleTab label="Connected Accounts" active={marketingView === "accounts"} onClick={() => setMarketingView("accounts")} />
+              <ModuleTab label="Tracking" active={marketingView === "tracking"} onClick={() => setMarketingView("tracking")} />
+            </div>
+          )}
 
-          {activeTab === "calendars" && <section className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+          {activeTab === "calendars" && <section className={appointmentView === "list" ? "space-y-5" : "max-w-4xl"}>
+            {appointmentView === "list" && <>
+            <div className="flex justify-end"><button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={() => { setEditingId(null); setForm({ ...defaultAppointment, slug: `strategy-session-${Date.now().toString().slice(-5)}` }); setAppointmentView("editor"); }}><Plus size={16} /> New appointment type</button></div>
             <div className="space-y-5">
             <Panel title="Appointment Types" icon={<Calendar size={18} />}>
               <div className="overflow-hidden rounded-md border border-[#dde3ec]">
@@ -1162,9 +1196,10 @@ function AdminApp() {
               </div>
             </Panel>
 
-            </div>
-            <div>
+            </div></>}
+            {appointmentView === "editor" && <div>
             <Panel title={editingId ? "Edit Appointment Type" : "Create Appointment Type"} icon={<Plus size={18} />}>
+              <button className="mb-4 rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold" onClick={() => setAppointmentView("list")}>Back to appointment types</button>
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Name" value={form.name} onChange={(value) => setForm({ ...form, name: value })} />
                 <Field label="Slug" value={form.slug} onChange={(value) => setForm({ ...form, slug: value })} />
@@ -1181,10 +1216,10 @@ function AdminApp() {
                 <button type="button" disabled={savingAppointment} className="inline-flex items-center gap-2 rounded-md bg-coral px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" onClick={saveAppointment}>
                   <Save size={16} /> {savingAppointment ? "Saving..." : editingId ? "Update appointment type" : "Save appointment type"}
                 </button>
-                {editingId && <button className="rounded-md border border-stone-300 px-4 py-2 text-sm" onClick={() => { setEditingId(null); setForm(defaultAppointment); }}>Cancel</button>}
+                {editingId && <button className="rounded-md border border-stone-300 px-4 py-2 text-sm" onClick={() => { setEditingId(null); setForm(defaultAppointment); setAppointmentView("list"); }}>Cancel</button>}
               </div>
             </Panel>
-            </div>
+            </div>}
           </section>}
 
           {activeTab === "availability" && <section className="grid gap-5 lg:grid-cols-2">
@@ -1253,25 +1288,27 @@ function AdminApp() {
             </Panel>
           </section>}
 
-          {activeTab === "contacts" && <section className="grid gap-5 xl:grid-cols-[360px_1fr]">
+          {activeTab === "contacts" && <section className={contactView === "list" ? "space-y-5" : "max-w-5xl"}>
+            {contactView === "list" && <>
+            <div className="flex justify-end"><button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={newContact}><Plus size={16} /> New contact</button></div>
             <Panel title="Contacts" icon={<Users size={18} />}>
-              <button className="mb-4 inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={newContact}>
-                <Plus size={16} /> New contact
-              </button>
-              <div className="space-y-2">
+              <div className="overflow-hidden rounded-md border border-[#dde3ec]">
+                <table className="w-full bg-white text-sm">
+                  <thead className="bg-[linear-gradient(90deg,#eef5ff,#f4fbf2,#fff8df)] text-left text-xs uppercase tracking-wide text-[#64748b]"><tr><th className="px-4 py-3">Name</th><th className="px-4 py-3">Email</th><th className="px-4 py-3">Company</th><th className="px-4 py-3">Tags</th><th className="px-4 py-3"></th></tr></thead>
+                  <tbody>
                 {contacts.length === 0 && <p className="text-sm text-stone-600">No contacts yet.</p>}
                 {contacts.map((contact) => (
-                  <button key={contact.id} className={`w-full rounded-md border p-3 text-left text-sm ${selectedContactId === contact.id ? "border-[var(--theme-primary)] bg-[#f5f9ff]" : "border-[#dde3ec] bg-white hover:bg-[#fbfcff]"}`} onClick={() => openContact(contact)}>
-                    <div className="font-bold">{contact.firstName} {contact.lastName}</div>
-                    <div className="text-xs text-[#64748b]">{contact.email}</div>
-                    <div className="mt-1 text-xs text-[#64748b]">{contact.company || contact.phone || contact.source}</div>
-                  </button>
+                  <tr key={contact.id} className="border-t border-[#e6ebf2]"><td className="px-4 py-3 font-bold">{contact.firstName} {contact.lastName}</td><td className="px-4 py-3">{contact.email}</td><td className="px-4 py-3">{contact.company || "-"}</td><td className="px-4 py-3">{(contact.tags ?? []).slice(0,3).map((tag) => <span key={tag} className="mr-1 rounded-full bg-[#eef5ff] px-2 py-1 text-xs font-bold text-[#2563eb]">{tag}</span>)}</td><td className="px-4 py-3 text-right"><button className="rounded-md border border-[#cbd5e1] px-3 py-1 text-xs font-bold" onClick={() => openContact(contact)}>Edit</button></td></tr>
                 ))}
+                  </tbody>
+                </table>
               </div>
             </Panel>
+            </>}
 
-            <div className="space-y-5">
+            {contactView === "editor" && <div className="space-y-5">
               <Panel title={selectedContactId ? "Contact Profile" : "Create Contact"} icon={<Users size={18} />}>
+                <button className="mb-4 rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold" onClick={() => setContactView("list")}>Back to contacts</button>
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field label="First name" value={contactForm.firstName} onChange={(value) => setContactForm({ ...contactForm, firstName: value })} />
                   <Field label="Last name" value={contactForm.lastName} onChange={(value) => setContactForm({ ...contactForm, lastName: value })} />
@@ -1360,7 +1397,7 @@ function AdminApp() {
                   </div>
                 </Panel>
               </section>}
-            </div>
+            </div>}
           </section>}
 
           {activeTab === "opportunities" && <section className="space-y-5">
@@ -1376,11 +1413,8 @@ function AdminApp() {
                     <select className="min-w-56 rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold text-[#16202a]" value={pipeline?.id ?? ""} onChange={(event) => setSelectedPipelineId(event.target.value)}>
                       {pipelines.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                     </select>
-                    {pipeline && <button className="inline-flex items-center justify-center gap-2 rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold text-[#16202a] hover:bg-[#f8fafc]" onClick={() => openPipelineModal(pipeline)}>
-                      <Settings size={16} /> Manage pipeline
-                    </button>}
-                    <button className="inline-flex items-center justify-center gap-2 rounded-md bg-[var(--theme-primary)] px-3 py-2 text-sm font-bold text-white" onClick={() => openPipelineModal()}>
-                      <Plus size={16} /> New pipeline
+                    <button className="inline-flex items-center justify-center gap-2 rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold text-[#16202a] hover:bg-[#f8fafc]" onClick={() => setActiveTab("pipelines")}>
+                      <Settings size={16} /> Pipelines
                     </button>
                   </div>
                 </div>
@@ -1437,37 +1471,6 @@ function AdminApp() {
                 </div>
               );
             })()}
-
-            {pipelineModalOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f172a]/35 p-4">
-              <div className="w-full max-w-xl rounded-md bg-white p-5 shadow-2xl">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <div>
-                    <div className="display-font text-xl font-black text-[#16202a]">{editingPipelineId ? "Manage Pipeline" : "New Pipeline"}</div>
-                    <p className="text-sm text-[#64748b]">Stages are listed one per line in board order.</p>
-                  </div>
-                  <button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => setPipelineModalOpen(false)}>Close</button>
-                </div>
-                <div className="space-y-3">
-                  <Field label="Pipeline name" value={pipelineForm.name} onChange={(value) => setPipelineForm({ ...pipelineForm, name: value })} />
-                  <textarea className="min-h-16 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" placeholder="Description" value={pipelineForm.description} onChange={(event) => setPipelineForm({ ...pipelineForm, description: event.target.value })} />
-                  <textarea className="min-h-36 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" placeholder={"New Lead\nQualified\nProposal\nWon"} value={pipelineForm.stagesText} onChange={(event) => setPipelineForm({ ...pipelineForm, stagesText: event.target.value })} />
-                </div>
-                <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  {editingPipelineId && <button className="inline-flex items-center justify-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm font-bold text-red-700" onClick={() => {
-                    const pipeline = pipelines.find((item) => item.id === editingPipelineId);
-                    if (pipeline) deletePipeline(pipeline);
-                  }}>
-                    <Trash2 size={16} /> Delete
-                  </button>}
-                  <div className="flex gap-2 sm:ml-auto">
-                    <button className="rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" onClick={() => setPipelineModalOpen(false)}>Cancel</button>
-                    <button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={savePipeline}>
-                      <Save size={16} /> Save pipeline
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>}
 
             {opportunityModalStageId && (() => {
               const pipeline = pipelines.find((item) => item.id === selectedPipelineId) ?? pipelines[0];
@@ -1828,8 +1831,52 @@ function AdminApp() {
             </div>}
           </section>}
 
-          {activeTab === "marketing" && <section className="grid gap-5 xl:grid-cols-[1fr_1fr]">
-            <Panel title="Campaigns" icon={<Megaphone size={18} />}>
+          {activeTab === "pipelines" && <section className={pipelineView === "list" ? "space-y-5" : "max-w-4xl"}>
+            {pipelineView === "list" && <>
+              <div className="flex justify-end"><button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={() => openPipelineModal()}><Plus size={16} /> New pipeline</button></div>
+              <Panel title="Pipelines" icon={<Clock size={18} />}>
+                <div className="space-y-3">
+                  {pipelines.map((pipeline) => <div key={pipeline.id} className="rounded-md border border-[#dde3ec] bg-white p-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div><div className="font-black text-[#16202a]">{pipeline.name}</div><div className="text-sm text-[#64748b]">{pipeline.description || "No description"}</div><div className="mt-2 flex flex-wrap gap-1.5">{pipeline.stages.sort((a,b)=>a.order-b.order).map((stage) => <span key={stage.id} className="rounded-md bg-[#eef5ff] px-2 py-1 text-xs font-bold text-[#2563eb]">{stage.name}</span>)}</div></div>
+                      <div className="flex gap-2"><button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => openPipelineModal(pipeline)}>Edit</button><button className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700" onClick={() => deletePipeline(pipeline)}>Delete</button></div>
+                    </div>
+                  </div>)}
+                </div>
+              </Panel>
+            </>}
+            {pipelineView === "editor" && <Panel title={editingPipelineId ? "Edit Pipeline" : "Create Pipeline"} icon={<Clock size={18} />}>
+              <button className="mb-4 rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold" onClick={() => setPipelineView("list")}>Back to pipelines</button>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Pipeline name" value={pipelineForm.name} onChange={(value) => setPipelineForm({ ...pipelineForm, name: value })} />
+                <textarea className="min-h-16 rounded-md border border-[#cbd5e1] p-3 text-sm md:col-span-2" placeholder="Description" value={pipelineForm.description} onChange={(event) => setPipelineForm({ ...pipelineForm, description: event.target.value })} />
+              </div>
+              <div className="mt-5 rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
+                <div className="mb-3 text-sm font-black">Pipeline stages</div>
+                <div className="space-y-2">
+                  {pipelineForm.stages.map((stage, index) => <div key={stage.id} draggable onDragStart={(event) => event.dataTransfer.setData("text/plain", String(index))} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
+                    const from = Number(event.dataTransfer.getData("text/plain"));
+                    const next = [...pipelineForm.stages];
+                    const [moved] = next.splice(from, 1);
+                    next.splice(index, 0, moved);
+                    setPipelineForm({ ...pipelineForm, stages: next });
+                  }} className="grid gap-2 rounded-md border border-[#dde3ec] bg-white p-2 md:grid-cols-[32px_1fr_120px]">
+                    <div className="flex items-center justify-center rounded bg-[#f1f5f9] text-xs font-black text-[#64748b]">::</div>
+                    <input className="rounded-md border border-[#cbd5e1] p-2 text-sm" value={stage.name} onChange={(event) => setPipelineForm({ ...pipelineForm, stages: pipelineForm.stages.map((item, i) => i === index ? { ...item, name: event.target.value } : item) })} />
+                    <div className="flex gap-1"><button className="rounded border border-[#cbd5e1] px-2 text-xs" onClick={() => movePipelineStage(index, -1)}>Up</button><button className="rounded border border-[#cbd5e1] px-2 text-xs" onClick={() => movePipelineStage(index, 1)}>Down</button><button className="rounded border border-rose-200 px-2 text-xs text-rose-700" onClick={() => setPipelineForm({ ...pipelineForm, stages: pipelineForm.stages.filter((_, i) => i !== index) })}>Del</button></div>
+                  </div>)}
+                </div>
+                <button className="mt-3 rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-bold" onClick={() => setPipelineForm({ ...pipelineForm, stages: [...pipelineForm.stages, { id: `stage-${Date.now()}`, name: "New Stage" }] })}>Add stage</button>
+              </div>
+              <div className="mt-5 flex gap-2">
+                <button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={savePipeline}><Save size={16} /> Save pipeline</button>
+                {editingPipelineId && <button className="rounded-md border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-bold text-rose-700" onClick={() => { const pipeline = pipelines.find((item) => item.id === editingPipelineId); if (pipeline) deletePipeline(pipeline); }}>Delete</button>}
+              </div>
+            </Panel>}
+          </section>}
+
+          {activeTab === "marketing" && <section className="space-y-5">
+            {marketingView === "campaigns" && <Panel title="Campaigns" icon={<Megaphone size={18} />}>
               <div className="rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
                 <div className="mb-3 text-sm font-black">{editingCampaignId ? "Edit campaign" : "Create campaign"}</div>
                 <div className="grid gap-3 md:grid-cols-2">
@@ -1860,9 +1907,11 @@ function AdminApp() {
                   </div>
                 </div>)}
               </div>
-            </Panel>
-            <div className="space-y-5">
-              <Panel title="Connected Accounts" icon={<ExternalLink size={18} />}>
+            </Panel>}
+            {marketingView === "accounts" && <Panel title="Connected Accounts" icon={<ExternalLink size={18} />}>
+                <div className="mb-4 rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3 text-sm text-[#64748b]">
+                  Connected accounts represent external identities this workspace can publish through or track against: Meta business/ad accounts, Google Ads/Tag accounts, and social pages like Instagram, Facebook, LinkedIn, TikTok, YouTube, and X. OAuth is not wired yet; these records prepare the account mapping and permissions model.
+                </div>
                 <div className="grid gap-3 md:grid-cols-2">
                   <label className="text-sm font-bold text-[#334155]">Provider
                     <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={marketingAccountForm.provider} onChange={(event) => setMarketingAccountForm({ ...marketingAccountForm, provider: event.target.value })}>
@@ -1879,8 +1928,8 @@ function AdminApp() {
                 </div>
                 <button className="mt-4 inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveMarketingAccount}><Plus size={16} /> Add account</button>
                 <div className="mt-4 space-y-2">{marketingAccounts.map((account) => <div key={account.id} className="rounded-md border border-[#dde3ec] bg-white p-3 text-sm"><b>{account.provider}</b> - {account.accountName} <span className="text-[#64748b]">({account.status})</span></div>)}</div>
-              </Panel>
-              <Panel title="Tracking" icon={<Settings size={18} />}>
+              </Panel>}
+              {marketingView === "tracking" && <Panel title="Tracking" icon={<Settings size={18} />}>
                 <div className="grid gap-3 md:grid-cols-2">
                   <Field label="Meta Pixel ID" value={marketingTracking.metaPixelId ?? ""} onChange={(value) => setMarketingTracking({ ...marketingTracking, metaPixelId: value })} />
                   <Field label="Google Tag ID" value={marketingTracking.googleTagId ?? ""} onChange={(value) => setMarketingTracking({ ...marketingTracking, googleTagId: value })} />
@@ -1890,8 +1939,7 @@ function AdminApp() {
                   <Field label="Default UTM campaign" value={marketingTracking.defaultUtmCampaign ?? ""} onChange={(value) => setMarketingTracking({ ...marketingTracking, defaultUtmCampaign: value })} />
                 </div>
                 <button className="mt-4 inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveMarketingTracking}><Save size={16} /> Save tracking</button>
-              </Panel>
-            </div>
+              </Panel>}
           </section>}
 
           {activeTab === "team" && <section className="space-y-5">
