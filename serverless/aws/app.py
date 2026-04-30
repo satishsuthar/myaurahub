@@ -908,8 +908,9 @@ def clean_site_sections(sections):
     cleaned = []
     for index, section in enumerate(sections or []):
         section_type = str(section.get("type", "hero")).strip()
-        if section_type not in ["hero", "features", "cta"]:
+        if section_type not in ["hero", "features", "cta", "text", "image", "columns", "split"]:
             section_type = "hero"
+        columns = section.get("columns", []) if isinstance(section.get("columns", []), list) else []
         cleaned.append({
             "id": str(section.get("id") or f"section-{index + 1}")[:80],
             "type": section_type,
@@ -918,7 +919,12 @@ def clean_site_sections(sections):
             "body": str(section.get("body", "") or "").strip()[:1500],
             "buttonText": str(section.get("buttonText", "") or "").strip()[:80],
             "buttonUrl": str(section.get("buttonUrl", "") or "").strip()[:300],
+            "imageUrl": str(section.get("imageUrl", "") or "").strip()[:1000],
+            "background": str(section.get("background", "white") or "white").strip()[:40],
+            "align": str(section.get("align", "left") or "left").strip()[:20],
+            "padding": str(section.get("padding", "normal") or "normal").strip()[:20],
             "items": [str(item).strip()[:160] for item in section.get("items", [])[:12] if str(item).strip()],
+            "columns": [{"title": str(col.get("title", "")).strip()[:160], "body": str(col.get("body", "")).strip()[:800], "imageUrl": str(col.get("imageUrl", "") or "").strip()[:1000]} for col in columns[:6] if str(col.get("title", "")).strip() or str(col.get("body", "")).strip()],
         })
     if not cleaned:
         raise ValueError("At least one page section is required.")

@@ -121,6 +121,7 @@ const emptySitePage: Omit<SitePage, "id"> = {
     { id: "cta", type: "cta", headline: "Ready to start?", body: "Choose a time and we will map out the next best step.", buttonText: "Schedule now", buttonUrl: "/book/myaurahub-test-workspace/discovery-call" }
   ]
 };
+const siteSectionTypes: SitePage["sections"][number]["type"][] = ["hero", "text", "image", "columns", "split", "features", "cta"];
 const customFieldTypes = [
   { group: "Text input", options: [["text", "Single line"], ["multiline", "Multiline"], ["textList", "Text box list"]] },
   { group: "Values", options: [["number", "Number"], ["phone", "Phone"], ["currency", "Currency"]] },
@@ -616,6 +617,33 @@ function AdminApp() {
 
   function updateSiteSection(id: string, patch: Partial<SitePage["sections"][number]>) {
     setSiteForm({ ...siteForm, sections: siteForm.sections.map((section) => section.id === id ? { ...section, ...patch } : section) });
+  }
+
+  function newSiteSection(type: SitePage["sections"][number]["type"]): SitePage["sections"][number] {
+    const id = `section-${Date.now()}`;
+    if (type === "columns") return { id, type, headline: "Three reasons to choose us", body: "Use columns for services, outcomes, or benefits.", columns: [{ title: "First benefit", body: "Describe it clearly." }, { title: "Second benefit", body: "Add another strong reason." }, { title: "Third benefit", body: "Close with proof or clarity." }], background: "white", align: "left", padding: "normal" };
+    if (type === "image") return { id, type, headline: "Show your work", body: "Use an image section for a venue, product, treatment room, or personal brand visual.", imageUrl: "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1200&q=80", background: "light", align: "center", padding: "normal" };
+    if (type === "split") return { id, type, headline: "A richer story section", body: "Pair persuasive copy with a useful image and a clear next action.", imageUrl: "https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1200&q=80", buttonText: "Learn more", buttonUrl: "#", background: "white", align: "left", padding: "normal" };
+    return { id, type, headline: type === "cta" ? "Ready to start?" : "Add a clear headline", body: "Write supporting copy for this section.", buttonText: type === "cta" || type === "hero" ? "Take action" : "", buttonUrl: "#", items: type === "features" ? ["First point", "Second point", "Third point"] : [], background: type === "cta" ? "primary" : "white", align: type === "hero" ? "center" : "left", padding: "normal" };
+  }
+
+  function addSiteSection(type: SitePage["sections"][number]["type"]) {
+    setSiteForm({ ...siteForm, sections: [...siteForm.sections, newSiteSection(type)] });
+  }
+
+  function moveSiteSection(index: number, direction: -1 | 1) {
+    const next = [...siteForm.sections];
+    const target = index + direction;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    setSiteForm({ ...siteForm, sections: next });
+  }
+
+  function updateSectionColumn(sectionId: string, index: number, patch: { title?: string; body?: string; imageUrl?: string }) {
+    const section = siteForm.sections.find((item) => item.id === sectionId);
+    const columns = [...(section?.columns ?? [])];
+    columns[index] = { ...columns[index], ...patch };
+    updateSiteSection(sectionId, { columns });
   }
 
   async function saveSitePage() {
@@ -1275,15 +1303,56 @@ function AdminApp() {
               </Panel>
             </div>
             <Panel title="WYSIWYG Editor" icon={<ExternalLink size={18} />}>
+              <div className="mb-4 flex flex-wrap gap-2">
+                {siteSectionTypes.map((type) => <button key={type} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-black capitalize hover:border-[var(--theme-primary)]" onClick={() => addSiteSection(type)}><Plus size={13} className="mr-1 inline" />{type}</button>)}
+              </div>
               <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
                 <div className="space-y-4">
-                  {siteForm.sections.map((section) => (
+                  {siteForm.sections.map((section, index) => (
                     <div key={section.id} className="rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
-                      <div className="mb-3 text-sm font-black capitalize">{section.type} section</div>
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <div className="text-sm font-black capitalize">{section.type} section</div>
+                        <div className="flex gap-1">
+                          <button className="rounded border border-[#cbd5e1] px-2 py-1 text-xs" onClick={() => moveSiteSection(index, -1)}>Up</button>
+                          <button className="rounded border border-[#cbd5e1] px-2 py-1 text-xs" onClick={() => moveSiteSection(index, 1)}>Down</button>
+                          <button className="rounded border border-rose-200 px-2 py-1 text-xs text-rose-700" onClick={() => setSiteForm({ ...siteForm, sections: siteForm.sections.filter((item) => item.id !== section.id) })}>Delete</button>
+                        </div>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <label className="text-sm font-bold text-[#334155]">Type
+                          <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={section.type} onChange={(event) => updateSiteSection(section.id, { type: event.target.value as SitePage["sections"][number]["type"] })}>
+                            {siteSectionTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+                          </select>
+                        </label>
+                        <label className="text-sm font-bold text-[#334155]">Background
+                          <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={section.background ?? "white"} onChange={(event) => updateSiteSection(section.id, { background: event.target.value })}>
+                            {["white", "light", "primary", "dark"].map((bg) => <option key={bg} value={bg}>{bg}</option>)}
+                          </select>
+                        </label>
+                        <label className="text-sm font-bold text-[#334155]">Align
+                          <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={section.align ?? "left"} onChange={(event) => updateSiteSection(section.id, { align: event.target.value as "left" | "center" })}>
+                            <option value="left">Left</option>
+                            <option value="center">Center</option>
+                          </select>
+                        </label>
+                        <label className="text-sm font-bold text-[#334155]">Padding
+                          <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={section.padding ?? "normal"} onChange={(event) => updateSiteSection(section.id, { padding: event.target.value as "compact" | "normal" | "spacious" })}>
+                            {["compact", "normal", "spacious"].map((size) => <option key={size} value={size}>{size}</option>)}
+                          </select>
+                        </label>
+                      </div>
                       <Field label="Eyebrow" value={section.eyebrow ?? ""} onChange={(value) => updateSiteSection(section.id, { eyebrow: value })} />
                       <Field label="Headline" value={section.headline} onChange={(value) => updateSiteSection(section.id, { headline: value })} />
-                      <textarea className="mt-3 min-h-20 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" value={section.body} onChange={(event) => updateSiteSection(section.id, { body: event.target.value })} />
-                      {section.type === "features" && <textarea className="mt-3 min-h-20 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" value={(section.items ?? []).join("\n")} onChange={(event) => updateSiteSection(section.id, { items: event.target.value.split("\n").filter(Boolean) })} />}
+                      <textarea className="mt-3 min-h-24 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" placeholder="Rich text / paragraph copy" value={section.body} onChange={(event) => updateSiteSection(section.id, { body: event.target.value })} />
+                      {["image", "split", "hero"].includes(section.type) && <Field label="Image URL" value={section.imageUrl ?? ""} onChange={(value) => updateSiteSection(section.id, { imageUrl: value })} />}
+                      {["features", "columns"].includes(section.type) && <textarea className="mt-3 min-h-20 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" placeholder="List items, one per line" value={(section.items ?? []).join("\n")} onChange={(event) => updateSiteSection(section.id, { items: event.target.value.split("\n").filter(Boolean) })} />}
+                      {section.type === "columns" && <div className="mt-3 space-y-2">
+                        {(section.columns ?? []).map((column, columnIndex) => <div key={columnIndex} className="rounded-md border border-[#dde3ec] bg-white p-2">
+                          <Field label={`Column ${columnIndex + 1} title`} value={column.title} onChange={(value) => updateSectionColumn(section.id, columnIndex, { title: value })} />
+                          <textarea className="mt-2 min-h-16 w-full rounded-md border border-[#cbd5e1] p-2 text-sm" value={column.body} onChange={(event) => updateSectionColumn(section.id, columnIndex, { body: event.target.value })} />
+                        </div>)}
+                        <button className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-bold" onClick={() => updateSiteSection(section.id, { columns: [...(section.columns ?? []), { title: "New column", body: "Column text" }] })}>Add column</button>
+                      </div>}
                       {section.type !== "features" && <div className="mt-3 grid gap-3 md:grid-cols-2">
                         <Field label="Button text" value={section.buttonText ?? ""} onChange={(value) => updateSiteSection(section.id, { buttonText: value })} />
                         <Field label="Button URL" value={section.buttonUrl ?? ""} onChange={(value) => updateSiteSection(section.id, { buttonUrl: value })} />
@@ -1836,42 +1905,38 @@ function AutomationCanvas({
 }
 
 function SitePagePreview({ page, theme, publicMode = false }: { page: Omit<SitePage, "id"> | SitePage; theme: ThemeConfig; publicMode?: boolean }) {
-  const hero = page.sections.find((section) => section.type === "hero") ?? page.sections[0];
-  const features = page.sections.find((section) => section.type === "features");
-  const cta = page.sections.find((section) => section.type === "cta");
   return (
     <div className={`${publicMode ? "" : "max-h-[760px] overflow-auto rounded-md border border-[#dde3ec]"} bg-[var(--theme-background)] text-[var(--theme-text)]`} style={themeStyle(theme)}>
-      <section className="px-6 py-14 md:px-10 md:py-20">
-        <div className="mx-auto max-w-5xl">
-          <div className="mb-5 flex gap-1.5">
-            <span className="h-3 w-3 rounded-full bg-[var(--theme-primary)]" />
-            <span className="h-3 w-3 rounded-full bg-[var(--theme-secondary)]" />
-            <span className="h-3 w-3 rounded-full bg-[var(--theme-accent)]" />
-          </div>
-          {hero?.eyebrow && <div className="mb-3 text-sm font-black uppercase tracking-wide text-[var(--theme-primary)]">{hero.eyebrow}</div>}
-          <h1 className="display-font max-w-3xl text-4xl font-black leading-tight md:text-6xl">{hero?.headline}</h1>
-          <p className="mt-5 max-w-2xl text-lg leading-8 text-[var(--theme-muted)]">{hero?.body}</p>
-          {hero?.buttonText && <a className="mt-8 inline-flex rounded-md bg-[var(--theme-primary)] px-5 py-3 text-sm font-black text-white" href={hero.buttonUrl || "#"}>{hero.buttonText}</a>}
-        </div>
-      </section>
-      {features && <section className="bg-white px-6 py-12 md:px-10">
-        <div className="mx-auto max-w-5xl">
-          <h2 className="display-font text-3xl font-black">{features.headline}</h2>
-          <p className="mt-3 max-w-2xl text-[var(--theme-muted)]">{features.body}</p>
-          <div className="mt-8 grid gap-3 md:grid-cols-3">
-            {(features.items ?? []).map((item) => <div key={item} className="rounded-md border border-[#dde3ec] bg-[#fbfcff] p-4 font-bold">{item}</div>)}
-          </div>
-        </div>
-      </section>}
-      {cta && <section className="px-6 py-12 md:px-10">
-        <div className="mx-auto max-w-5xl rounded-md bg-[var(--theme-primary)] p-8 text-white">
-          <h2 className="display-font text-3xl font-black">{cta.headline}</h2>
-          <p className="mt-3 max-w-2xl text-white/85">{cta.body}</p>
-          {cta.buttonText && <a className="mt-6 inline-flex rounded-md bg-white px-5 py-3 text-sm font-black text-[var(--theme-primary)]" href={cta.buttonUrl || "#"}>{cta.buttonText}</a>}
-        </div>
-      </section>}
+      {page.sections.map((section) => <RenderSiteSection key={section.id} section={section} />)}
     </div>
   );
+}
+
+function RenderSiteSection({ section }: { section: SitePage["sections"][number] }) {
+  const bg = section.background === "primary" ? "bg-[var(--theme-primary)] text-white" : section.background === "dark" ? "bg-[#16202a] text-white" : section.background === "light" ? "bg-[#f8fafc]" : "bg-white";
+  const pad = section.padding === "compact" ? "py-8" : section.padding === "spacious" ? "py-20 md:py-28" : "py-12 md:py-16";
+  const align = section.align === "center" ? "text-center items-center" : "text-left items-start";
+  const muted = section.background === "primary" || section.background === "dark" ? "text-white/80" : "text-[var(--theme-muted)]";
+  const content = (
+    <div className={`flex flex-col ${align}`}>
+      {section.eyebrow && <div className="mb-3 text-sm font-black uppercase tracking-wide text-[var(--theme-accent)]">{section.eyebrow}</div>}
+      <h2 className={`display-font font-black leading-tight ${section.type === "hero" ? "text-4xl md:text-6xl" : "text-3xl md:text-4xl"}`}>{section.headline}</h2>
+      <p className={`mt-4 max-w-2xl whitespace-pre-line text-base leading-7 ${muted}`}>{section.body}</p>
+      {section.buttonText && <a className="mt-7 inline-flex rounded-md bg-[var(--theme-primary)] px-5 py-3 text-sm font-black text-white" href={section.buttonUrl || "#"}>{section.buttonText}</a>}
+    </div>
+  );
+  return (
+    <section className={`${bg} px-6 ${pad} md:px-10`}>
+      <div className="mx-auto max-w-6xl">
+        {section.type === "split" ? <div className="grid gap-8 md:grid-cols-2 md:items-center">{content}<SiteImage url={section.imageUrl} /></div> : section.type === "image" ? <div className="space-y-6">{content}<SiteImage url={section.imageUrl} /></div> : section.type === "columns" ? <>{content}<div className="mt-8 grid gap-4 md:grid-cols-3">{(section.columns ?? []).map((column, index) => <div key={`${column.title}-${index}`} className="rounded-md border border-[#dde3ec] bg-white p-5 text-[#16202a] shadow-sm"><h3 className="font-black">{column.title}</h3><p className="mt-2 text-sm leading-6 text-[#64748b]">{column.body}</p></div>)}</div></> : <>{content}{(section.items ?? []).length > 0 && <div className="mt-8 grid gap-3 md:grid-cols-3">{(section.items ?? []).map((item) => <div key={item} className="rounded-md border border-[#dde3ec] bg-white p-4 font-bold text-[#16202a]">{item}</div>)}</div>}</>}
+      </div>
+    </section>
+  );
+}
+
+function SiteImage({ url }: { url?: string }) {
+  if (!url) return <div className="min-h-64 rounded-md border border-dashed border-[#cbd5e1] bg-[#f8fafc]" />;
+  return <img src={url} alt="" className="max-h-[460px] w-full rounded-md object-cover shadow-sm" />;
 }
 
 function DiagramArrow({ vertical = false }: { vertical?: boolean }) {

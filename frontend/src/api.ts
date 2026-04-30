@@ -157,13 +157,18 @@ export type AutomationRule = {
 
 export type SiteSection = {
   id: string;
-  type: "hero" | "features" | "cta";
+  type: "hero" | "features" | "cta" | "text" | "image" | "columns" | "split";
   eyebrow?: string;
   headline: string;
   body: string;
   buttonText?: string;
   buttonUrl?: string;
   items?: string[];
+  imageUrl?: string;
+  background?: string;
+  align?: "left" | "center";
+  columns?: Array<{ title: string; body: string; imageUrl?: string }>;
+  padding?: "compact" | "normal" | "spacious";
 };
 
 export type SitePage = {
