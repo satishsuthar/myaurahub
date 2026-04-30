@@ -115,6 +115,7 @@ const emptySitePage: Omit<SitePage, "id"> = {
   template: "coach",
   seoTitle: "New Landing Page",
   seoDescription: "A focused landing page for your business.",
+  theme: defaultTheme,
   sections: [
     { id: "hero", type: "hero", eyebrow: "For ambitious clients", headline: "Turn interest into booked calls", body: "A polished landing page for your offer, services, and next step.", buttonText: "Book a call", buttonUrl: "/book/myaurahub-test-workspace/discovery-call" },
     { id: "features", type: "features", headline: "What you get", body: "Clear outcomes, simple process, and a direct path to work together.", items: ["Personalized guidance", "Simple online booking", "Clear next steps"] },
@@ -125,6 +126,7 @@ const siteSectionTypes: SitePage["sections"][number]["type"][] = ["hero", "text"
 const sitePagePresets = [
   { id: "blank", label: "Blank page" },
   { id: "coach", label: "Coach" },
+  { id: "performance", label: "Performance coach" },
   { id: "clinic", label: "Clinic" },
   { id: "personal", label: "Personal brand" }
 ];
@@ -610,6 +612,12 @@ function AdminApp() {
         { id: "features", type: "features", headline: "How we help", body: "A simple path from interest to clarity.", items: ["Strategy sessions", "Personalized action plans", "Accountability and follow-up"] },
         { id: "cta", type: "cta", headline: "Take the next step", body: "Book a time that works for you.", buttonText: "Schedule now", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call` }
       ] },
+      performance: { ...emptySitePage, name: `${business} Performance Coach Page`, slug: slugifyLocal(`${business} performance coaching`), template, seoTitle: `${business} Performance Coaching`, theme: { ...themePresets.find((item) => item.preset === "minimal")!, primary: "#111827", secondary: "#dc2626", accent: "#facc15", background: "#f8fafc", displayFont: "Montserrat", bodyFont: "Inter" }, sections: [
+        { id: "hero", type: "hero", eyebrow: "Performance coaching", headline: "You are not broken. You are ready to build.", body: "A bold coaching page for people ready to take ownership of health, mindset, strength, and identity.", buttonText: "Book your call", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call`, background: "dark", align: "center", padding: "spacious" },
+        { id: "belief", type: "columns", headline: "What makes this different", body: "A structured identity-based approach inspired by belief, nourishment, and building strength.", background: "white", columns: [{ title: "Belief", body: "Belief shapes behavior. Behavior forms identity. Identity drives everything." }, { title: "Nourish", body: "Being nourished is about thriving, recovery, and capacity." }, { title: "Build", body: "Your life is not templated. Your training and growth should not be either." }] },
+        { id: "story", type: "text", headline: "A new paradigm", body: "You do not create the life you want by chasing the next quick fix. You build it by becoming the person who can live it. This is coaching for the next chapter, not the next 30 days.", background: "light", align: "center", padding: "spacious" },
+        { id: "cta", type: "cta", headline: "Let's start building together", body: "Book a call and take the first step.", buttonText: "Book your call", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call`, background: "primary", align: "center" }
+      ] },
       clinic: { ...emptySitePage, name: `${business} Clinic Page`, slug: slugifyLocal(`${business} clinic`), template, seoTitle: `${business} Clinic`, sections: [
         { id: "hero", type: "hero", eyebrow: "Care made simple", headline: `Book care with ${business}`, body: "Explain services, build trust, and help patients book the right appointment.", buttonText: "Book appointment", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call` },
         { id: "features", type: "features", headline: "Services", body: "Show the most important reasons to choose your practice.", items: ["Initial consultations", "Treatment plans", "Follow-up support"] },
@@ -690,7 +698,7 @@ function AdminApp() {
 
   function editSitePage(page: SitePage) {
     setEditingSitePageId(page.id);
-    setSiteForm({ name: page.name, slug: page.slug, status: page.status, template: page.template, seoTitle: page.seoTitle, seoDescription: page.seoDescription, sections: page.sections });
+    setSiteForm({ name: page.name, slug: page.slug, status: page.status, template: page.template, seoTitle: page.seoTitle, seoDescription: page.seoDescription, theme: page.theme ?? theme, sections: page.sections });
     setSelectedSiteSectionId(page.sections[0]?.id ?? "");
     setActiveTab("sites");
   }
@@ -772,9 +780,6 @@ function AdminApp() {
               <h1 className="display-font text-xl font-bold">{activeTab === "contacts" ? "Contacts" : activeTab === "opportunities" ? "Opportunities" : activeTab === "automations" ? "Automations" : activeTab === "sites" ? "Sites" : activeTab === "settings" ? "App Settings" : activeTab === "profile" ? "My Profile" : "Scheduling"}</h1>
               <p className="text-xs font-medium text-[#64748b]">{activeTab === "contacts" ? "Contacts, custom fields, tasks, and activity timeline." : activeTab === "opportunities" ? "Pipelines, stages, deals, and revenue tracking." : activeTab === "automations" ? "Workflow rules that react to bookings, contacts, pages, tasks, and opportunities." : activeTab === "sites" ? "Landing pages, mini-sites, and WYSIWYG page editing." : activeTab === "settings" ? "Workspace-wide branding and application settings." : activeTab === "profile" ? "Your login and workspace access details." : "Appointment types, availability, bookings, and scheduling settings."}</p>
             </div>
-            <a className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white shadow-sm shadow-blue-200" href={`/book/${authUser.workspaceSlug}/${appointments[0]?.slug ?? "discovery-call"}`}>
-              <ExternalLink size={16} /> Open booking page
-            </a>
           </div>
         </header>
 
@@ -1311,7 +1316,7 @@ function AdminApp() {
                 {siteSectionTypes.map((type) => <button key={type} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-black capitalize hover:border-[var(--theme-primary)]" onClick={() => addSiteSection(type)}><Plus size={13} className="mr-1 inline" />{type}</button>)}
               </div>
               <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
-                <SitePagePreview page={siteForm} theme={theme} selectedSectionId={selectedSiteSectionId} onSelectSection={setSelectedSiteSectionId} onReorderSection={reorderSiteSection} />
+                <SitePagePreview page={siteForm} theme={siteForm.theme ?? theme} selectedSectionId={selectedSiteSectionId} onSelectSection={setSelectedSiteSectionId} onReorderSection={reorderSiteSection} />
                 <div className="space-y-4">
                   <div className="rounded-md border border-[#dde3ec] bg-white p-3">
                     <div className="mb-3 text-sm font-black">Page settings</div>
@@ -1325,6 +1330,20 @@ function AdminApp() {
                     </label>
                     <Field label="SEO title" value={siteForm.seoTitle ?? ""} onChange={(value) => setSiteForm({ ...siteForm, seoTitle: value })} />
                     <textarea className="mt-3 min-h-16 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" placeholder="SEO description" value={siteForm.seoDescription ?? ""} onChange={(event) => setSiteForm({ ...siteForm, seoDescription: event.target.value })} />
+                    <div className="mt-4 border-t border-[#dde3ec] pt-3">
+                      <div className="mb-2 text-sm font-black">Page theme</div>
+                      <label className="text-sm font-bold text-[#334155]">Preset
+                        <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={siteForm.theme?.preset ?? theme.preset} onChange={(event) => setSiteForm({ ...siteForm, theme: themePresets.find((preset) => preset.preset === event.target.value) ?? siteForm.theme })}>
+                          {themePresets.map((preset) => <option key={preset.preset} value={preset.preset}>{preset.preset}</option>)}
+                        </select>
+                      </label>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <ColorField label="Primary" value={(siteForm.theme ?? theme).primary} onChange={(value) => setSiteForm({ ...siteForm, theme: { ...(siteForm.theme ?? theme), preset: "custom", primary: value } })} />
+                        <ColorField label="Accent" value={(siteForm.theme ?? theme).accent} onChange={(value) => setSiteForm({ ...siteForm, theme: { ...(siteForm.theme ?? theme), preset: "custom", accent: value } })} />
+                        <SelectField label="Display font" value={(siteForm.theme ?? theme).displayFont} options={fontOptions} onChange={(value) => setSiteForm({ ...siteForm, theme: { ...(siteForm.theme ?? theme), preset: "custom", displayFont: value } })} />
+                        <SelectField label="Body font" value={(siteForm.theme ?? theme).bodyFont} options={fontOptions} onChange={(value) => setSiteForm({ ...siteForm, theme: { ...(siteForm.theme ?? theme), preset: "custom", bodyFont: value } })} />
+                      </div>
+                    </div>
                     {editingSitePageId && <button className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700" onClick={() => sitePages.find((page) => page.id === editingSitePageId) && deleteSitePage(sitePages.find((page) => page.id === editingSitePageId)!)}>Delete page</button>}
                   </div>
                   {(() => {
@@ -1555,12 +1574,12 @@ function PublicSitePage({ siteRoute }: { siteRoute: string }) {
         if (!response.ok) throw new Error("Page not found.");
         return response.json();
       })
-      .then((data) => { setPage(data.page); setTheme(data.theme ?? defaultTheme); })
+      .then((data) => { setPage(data.page); setTheme(data.page?.theme ?? data.theme ?? defaultTheme); })
       .catch((err) => setError(err.message));
   }, [workspaceSlug, pageSlug]);
   if (error) return <main className="flex min-h-screen items-center justify-center bg-[#f8fafc] text-[#16202a]">{error}</main>;
   if (!page) return <main className="flex min-h-screen items-center justify-center bg-[#f8fafc] text-[#16202a]">Loading...</main>;
-  return <main className="min-h-screen bg-[var(--theme-background)]" style={themeStyle(theme)}><SitePagePreview page={page} theme={theme} publicMode /></main>;
+  return <main className="min-h-screen bg-[var(--theme-background)]" style={themeStyle(page.theme ?? theme)}><SitePagePreview page={page} theme={page.theme ?? theme} publicMode /></main>;
 }
 
 function PublicBookingPage() {

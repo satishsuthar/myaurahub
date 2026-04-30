@@ -885,7 +885,7 @@ def delete_automation(context, automation_id):
 
 
 def site_page_shape(item):
-    return {k: item.get(k) for k in ["id", "name", "slug", "status", "template", "seoTitle", "seoDescription", "sections", "createdAtUtc", "updatedAtUtc"]}
+    return {k: item.get(k) for k in ["id", "name", "slug", "status", "template", "seoTitle", "seoDescription", "theme", "sections", "createdAtUtc", "updatedAtUtc"]}
 
 
 def list_site_pages(workspace_slug):
@@ -944,6 +944,7 @@ def clean_site_page(data, current=None):
         "template": str(data.get("template", current.get("template", "coach") if current else "coach"))[:40],
         "seoTitle": str(data.get("seoTitle", current.get("seoTitle", name) if current else name) or "").strip()[:160],
         "seoDescription": str(data.get("seoDescription", current.get("seoDescription", "") if current else "") or "").strip()[:300],
+        "theme": data.get("theme", current.get("theme", {}) if current else {}) if isinstance(data.get("theme", current.get("theme", {}) if current else {}), dict) else {},
         "sections": clean_site_sections(data.get("sections", current.get("sections", []) if current else [])),
     }
 

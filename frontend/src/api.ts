@@ -179,6 +179,7 @@ export type SitePage = {
   template: string;
   seoTitle?: string;
   seoDescription?: string;
+  theme?: ThemeConfig;
   sections: SiteSection[];
   createdAtUtc?: string;
   updatedAtUtc?: string;
