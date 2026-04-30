@@ -82,7 +82,7 @@ def handler(event, _context):
 
         context = auth_context(event)
         if path == "/api/calendar/appointment-types" and method == "GET":
-            return response(200, list_appointment_types(context["workspaceSlug"]))
+            return response(200, list_appointment_types(context))
         if path == "/api/calendar/appointment-types" and method == "POST":
             return response(201, create_appointment_type(context, body))
         if path.startswith("/api/calendar/appointment-types/") and method == "PUT":
@@ -92,21 +92,21 @@ def handler(event, _context):
             appointment_id = path.split("/")[4]
             return response(200, delete_appointment_type(context, appointment_id))
         if path == "/api/calendar/bookings" and method == "GET":
-            return response(200, list_bookings(context["workspaceSlug"]))
+            return response(200, list_bookings(context))
         if path == "/api/calendar/availability/me" and method == "GET":
-            return response(200, get_availability(context["userId"]))
+            return response(200, get_availability(context))
         if path.startswith("/api/calendar/users/") and path.endswith("/availability") and method == "PUT":
             return response(200, replace_availability(context, body))
         if path == "/api/calendar/unavailability" and method == "GET":
-            return response(200, get_unavailability(context["userId"]))
+            return response(200, get_unavailability(context))
         if path == "/api/calendar/unavailability" and method == "PUT":
-            return response(200, replace_unavailability(context["userId"], body))
+            return response(200, replace_unavailability(context, body))
         if path == "/api/contacts" and method == "GET":
-            return response(200, list_contacts(context["workspaceSlug"]))
+            return response(200, list_contacts(context))
         if path == "/api/contacts" and method == "POST":
             return response(201, create_contact(context, body))
         if path == "/api/opportunities/pipelines" and method == "GET":
-            return response(200, list_pipelines(context["workspaceSlug"]))
+            return response(200, list_pipelines(context))
         if path == "/api/opportunities/pipelines" and method == "POST":
             return response(201, create_pipeline(context, body))
         if path.startswith("/api/opportunities/pipelines/") and method == "PUT":
@@ -116,14 +116,14 @@ def handler(event, _context):
             pipeline_id = path.split("/")[4]
             return response(200, delete_pipeline(context, pipeline_id))
         if path == "/api/opportunities" and method == "GET":
-            return response(200, list_opportunities(context["workspaceSlug"]))
+            return response(200, list_opportunities(context))
         if path == "/api/opportunities" and method == "POST":
             return response(201, create_opportunity(context, body))
         if path.startswith("/api/opportunities/") and method == "PUT":
             opportunity_id = path.split("/")[3]
             return response(200, update_opportunity(context, opportunity_id, body))
         if path == "/api/automations" and method == "GET":
-            return response(200, list_automations(context["workspaceSlug"]))
+            return response(200, list_automations(context))
         if path == "/api/automations" and method == "POST":
             return response(201, create_automation(context, body))
         if path.startswith("/api/automations/") and method == "PUT":
@@ -133,7 +133,7 @@ def handler(event, _context):
             automation_id = path.split("/")[3]
             return response(200, delete_automation(context, automation_id))
         if path == "/api/sites/pages" and method == "GET":
-            return response(200, list_site_pages(context["workspaceSlug"]))
+            return response(200, list_site_pages(context))
         if path == "/api/sites/pages" and method == "POST":
             return response(201, create_site_page(context, body))
         if path.startswith("/api/sites/pages/") and method == "PUT":
@@ -146,17 +146,17 @@ def handler(event, _context):
             parts = path.strip("/").split("/")
             contact_id = parts[2] if len(parts) > 2 else ""
             if len(parts) == 3 and method == "GET":
-                return response(200, get_contact_by_id(context["workspaceSlug"], contact_id))
+                return response(200, get_contact_by_id(context, contact_id))
             if len(parts) == 3 and method == "PUT":
                 return response(200, update_contact(context, contact_id, body))
             if len(parts) == 4 and parts[3] == "tasks" and method == "GET":
-                return response(200, list_contact_tasks(context["workspaceSlug"], contact_id))
+                return response(200, list_contact_tasks(context, contact_id))
             if len(parts) == 4 and parts[3] == "tasks" and method == "POST":
                 return response(201, create_contact_task(context, contact_id, body))
             if len(parts) == 5 and parts[3] == "tasks" and method == "PUT":
                 return response(200, update_contact_task(context, contact_id, parts[4], body))
             if len(parts) == 4 and parts[3] == "activity" and method == "GET":
-                return response(200, list_contact_activity(context["workspaceSlug"], contact_id))
+                return response(200, list_contact_activity(context, contact_id))
         if path == "/api/workspace/theme" and method == "GET":
             return response(200, get_theme(context["workspaceSlug"]))
         if path == "/api/workspace/theme" and method == "PUT":
@@ -187,18 +187,18 @@ def handler(event, _context):
         if path == "/api/workspace/white-label" and method == "PUT":
             return response(200, update_white_label(context, body))
         if path == "/api/marketing/accounts" and method == "GET":
-            return response(200, list_marketing_accounts(context["workspaceSlug"]))
+            return response(200, list_marketing_accounts(context))
         if path == "/api/marketing/accounts" and method == "POST":
             return response(201, create_marketing_account(context, body))
         if path == "/api/marketing/campaigns" and method == "GET":
-            return response(200, list_marketing_campaigns(context["workspaceSlug"]))
+            return response(200, list_marketing_campaigns(context))
         if path == "/api/marketing/campaigns" and method == "POST":
             return response(201, create_marketing_campaign(context, body))
         if path.startswith("/api/marketing/campaigns/") and method == "PUT":
             campaign_id = path.split("/")[3]
             return response(200, update_marketing_campaign(context, campaign_id, body))
         if path == "/api/marketing/tracking" and method == "GET":
-            return response(200, get_marketing_tracking(context["workspaceSlug"]))
+            return response(200, get_marketing_tracking(context))
         if path == "/api/marketing/tracking" and method == "PUT":
             return response(200, update_marketing_tracking(context, body))
         return response(404, {"error": "Not found"})
@@ -216,6 +216,28 @@ class ConflictError(Exception):
 
 def workspace_pk(slug=WORKSPACE_SLUG):
     return f"WS#{slug}"
+
+
+def data_pk(context):
+    subaccount_id = str(context.get("subAccountId", "") or "").strip()
+    if not subaccount_id:
+        return workspace_pk(context["workspaceSlug"])
+    subaccount = table.get_item(Key={"pk": workspace_pk(context["workspaceSlug"]), "sk": f"SUBACCOUNT#{subaccount_id}"}).get("Item")
+    if not subaccount or not can_access_subaccount(context, subaccount):
+        raise PermissionError("You do not have access to this subaccount.")
+    return f"{workspace_pk(context['workspaceSlug'])}#SUBACCOUNT#{subaccount_id}"
+
+
+def scoped_pk(scope):
+    return data_pk(scope) if isinstance(scope, dict) else workspace_pk(scope)
+
+
+def availability_pk(scope):
+    if isinstance(scope, dict):
+        subaccount_id = str(scope.get("subAccountId", "") or "").strip()
+        suffix = f"#SUBACCOUNT#{subaccount_id}" if subaccount_id else ""
+        return f"USER#{scope['userId']}{suffix}"
+    return f"USER#{scope}"
 
 
 def appt_sk(slug):
@@ -291,6 +313,7 @@ def auth_context(event):
         "workspaceName": payload.get("workspaceName", "Workspace"),
         "role": user.get("role", payload.get("role", "Owner")),
         "permissions": user.get("permissions", payload.get("permissions", DEFAULT_ROLE_PERMISSIONS["Owner"])),
+        "subAccountId": ((event.get("headers") or {}).get("x-sub-account-id") or (event.get("headers") or {}).get("X-Sub-Account-Id") or "").strip(),
     }
 
 
@@ -406,21 +429,22 @@ def seed_workspace_defaults(workspace_slug, workspace_id, user_id, workspace_nam
         table.put_item(Item={"pk": f"USER#{user_id}", "sk": f"AVAIL#{day}#09:00", "entity": "availability", "workspaceSlug": workspace_slug, "userId": user_id, "dayOfWeek": day, "startTime": "09:00", "endTime": "17:00", "timezone": TZ})
 
 
-def list_appointment_types(workspace_slug=WORKSPACE_SLUG):
-    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("APPT#"))
+def list_appointment_types(scope=WORKSPACE_SLUG):
+    result = table.query(KeyConditionExpression=Key("pk").eq(scoped_pk(scope)) & Key("sk").begins_with("APPT#"))
     return [public_appt_shape(item) for item in result.get("Items", [])]
 
 
 def create_appointment_type(context, data):
     slug = data["slug"].strip().lower()
-    existing = table.get_item(Key={"pk": workspace_pk(context["workspaceSlug"]), "sk": appt_sk(slug)}).get("Item")
+    pk = data_pk(context)
+    existing = table.get_item(Key={"pk": pk, "sk": appt_sk(slug)}).get("Item")
     if existing:
         raise ValueError("This public link slug already exists. Edit the existing appointment type or choose a different slug.")
     workspace = table.get_item(Key={"pk": workspace_pk(context["workspaceSlug"]), "sk": "META"}).get("Item") or {}
     duration = bounded_int(data.get("durationMinutes", 30), 1, 1440, "Duration")
     interval = bounded_int(data.get("serviceIntervalMinutes", 15), 1, 1440, "Service interval")
     item = {
-        "pk": workspace_pk(context["workspaceSlug"]), "sk": appt_sk(slug), "entity": "appointmentType",
+        "pk": pk, "sk": appt_sk(slug), "entity": "appointmentType",
         "id": str(uuid.uuid4()), "workspaceId": workspace.get("id", context["workspaceSlug"]), "assignedUserId": context["userId"],
         "name": data["name"], "description": data.get("description"), "slug": slug,
         "durationMinutes": duration, "locationType": data.get("locationType", "Online"),
@@ -436,7 +460,7 @@ def create_appointment_type(context, data):
 
 
 def update_appointment_type(context, appointment_id, data):
-    current = find_appointment_by_id(context["workspaceSlug"], appointment_id)
+    current = find_appointment_by_id(context, appointment_id)
     if not current:
         raise ValueError("Appointment type not found.")
     old_key = {"pk": current["pk"], "sk": current["sk"]}
@@ -467,18 +491,18 @@ def update_appointment_type(context, appointment_id, data):
 
 
 def delete_appointment_type(context, appointment_id):
-    current = find_appointment_by_id(context["workspaceSlug"], appointment_id)
+    current = find_appointment_by_id(context, appointment_id)
     if not current:
         raise ValueError("Appointment type not found.")
-    existing_bookings = [booking for booking in list_bookings(context["workspaceSlug"]) if booking.get("appointmentTypeId") == appointment_id]
+    existing_bookings = [booking for booking in list_bookings(context) if booking.get("appointmentTypeId") == appointment_id]
     if existing_bookings:
         raise ConflictError("This appointment type has bookings, so it cannot be permanently deleted. Make it inactive instead.")
     table.delete_item(Key={"pk": current["pk"], "sk": current["sk"]})
     return {"deleted": True, "id": appointment_id}
 
 
-def find_appointment_by_id(workspace_slug, appointment_id):
-    for item in table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("APPT#")).get("Items", []):
+def find_appointment_by_id(scope, appointment_id):
+    for item in table.query(KeyConditionExpression=Key("pk").eq(scoped_pk(scope)) & Key("sk").begins_with("APPT#")).get("Items", []):
         if item.get("id") == appointment_id:
             return item
     return None
@@ -498,8 +522,8 @@ def get_appointment(workspace_slug, slug):
     return item
 
 
-def get_availability(user_id):
-    result = table.query(KeyConditionExpression=Key("pk").eq(f"USER#{user_id}") & Key("sk").begins_with("AVAIL#"))
+def get_availability(scope):
+    result = table.query(KeyConditionExpression=Key("pk").eq(availability_pk(scope)) & Key("sk").begins_with("AVAIL#"))
     return [{k: item.get(k) for k in ["dayOfWeek", "startTime", "endTime", "timezone"]} for item in result.get("Items", [])]
 
 
@@ -510,7 +534,8 @@ def normalize_time(value):
 
 def replace_availability(context, data):
     user_id = context["userId"]
-    existing = table.query(KeyConditionExpression=Key("pk").eq(f"USER#{user_id}") & Key("sk").begins_with("AVAIL#")).get("Items", [])
+    pk = availability_pk(context)
+    existing = table.query(KeyConditionExpression=Key("pk").eq(pk) & Key("sk").begins_with("AVAIL#")).get("Items", [])
     normalized_rules = {}
     for rule in data.get("rules", []):
         start_time = normalize_time(rule["startTime"])
@@ -529,28 +554,30 @@ def replace_availability(context, data):
             batch.delete_item(Key={"pk": item["pk"], "sk": item["sk"]})
     with table.batch_writer() as batch:
         for rule in normalized_rules.values():
-            batch.put_item(Item={"pk": f"USER#{user_id}", "sk": f"AVAIL#{rule['dayOfWeek']}#{rule['startTime']}", "entity": "availability", "workspaceSlug": context["workspaceSlug"], "userId": user_id, "dayOfWeek": rule["dayOfWeek"], "startTime": rule["startTime"], "endTime": rule["endTime"], "timezone": data.get("timezone", TZ)})
-    return get_availability(user_id)
+            batch.put_item(Item={"pk": pk, "sk": f"AVAIL#{rule['dayOfWeek']}#{rule['startTime']}", "entity": "availability", "workspaceSlug": context["workspaceSlug"], "subAccountId": context.get("subAccountId", ""), "userId": user_id, "dayOfWeek": rule["dayOfWeek"], "startTime": rule["startTime"], "endTime": rule["endTime"], "timezone": data.get("timezone", TZ)})
+    return get_availability(context)
 
 
-def get_unavailability(user_id):
-    result = table.query(KeyConditionExpression=Key("pk").eq(f"USER#{user_id}") & Key("sk").begins_with("UNAVAIL#"))
+def get_unavailability(scope):
+    result = table.query(KeyConditionExpression=Key("pk").eq(availability_pk(scope)) & Key("sk").begins_with("UNAVAIL#"))
     return [{"date": item["date"], "reason": item.get("reason", "")} for item in result.get("Items", [])]
 
 
-def replace_unavailability(user_id, data):
-    existing = table.query(KeyConditionExpression=Key("pk").eq(f"USER#{user_id}") & Key("sk").begins_with("UNAVAIL#")).get("Items", [])
+def replace_unavailability(context, data):
+    user_id = context["userId"]
+    pk = availability_pk(context)
+    existing = table.query(KeyConditionExpression=Key("pk").eq(pk) & Key("sk").begins_with("UNAVAIL#")).get("Items", [])
     with table.batch_writer() as batch:
         for item in existing:
             batch.delete_item(Key={"pk": item["pk"], "sk": item["sk"]})
         for item in data.get("dates", []):
             date = item["date"]
-            batch.put_item(Item={"pk": f"USER#{user_id}", "sk": f"UNAVAIL#{date}", "entity": "unavailability", "workspaceSlug": WORKSPACE_SLUG, "userId": user_id, "date": date, "reason": item.get("reason", "")})
-    return get_unavailability(user_id)
+            batch.put_item(Item={"pk": pk, "sk": f"UNAVAIL#{date}", "entity": "unavailability", "workspaceSlug": context["workspaceSlug"], "subAccountId": context.get("subAccountId", ""), "userId": user_id, "date": date, "reason": item.get("reason", "")})
+    return get_unavailability(context)
 
 
-def list_contacts(workspace_slug):
-    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("CONTACT#"))
+def list_contacts(scope):
+    result = table.query(KeyConditionExpression=Key("pk").eq(scoped_pk(scope)) & Key("sk").begins_with("CONTACT#"))
     return [contact_shape(item) for item in result.get("Items", [])]
 
 
@@ -618,17 +645,17 @@ def clean_custom_fields(custom_fields):
 def create_contact(context, data):
     clean = clean_contact_data(data)
     now = datetime.utcnow().isoformat() + "Z"
-    item = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"CONTACT#{clean['normalizedEmail']}", "entity": "contact", "id": str(uuid.uuid4()), **clean, "createdAtUtc": now, "updatedAtUtc": now}
+    item = {"pk": data_pk(context), "sk": f"CONTACT#{clean['normalizedEmail']}", "entity": "contact", "id": str(uuid.uuid4()), "subAccountId": context.get("subAccountId", ""), **clean, "createdAtUtc": now, "updatedAtUtc": now}
     existing = table.get_item(Key={"pk": item["pk"], "sk": item["sk"]}).get("Item")
     if existing:
         raise ValueError("A contact already exists with this email.")
     table.put_item(Item=item)
-    add_contact_activity(context["workspaceSlug"], item["id"], "ContactCreated", "Contact created", "Created manually in Contacts.")
+    add_contact_activity(context, item["id"], "ContactCreated", "Contact created", "Created manually in Contacts.")
     return contact_shape(item)
 
 
-def find_contact_item(workspace_slug, contact_id):
-    for item in table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("CONTACT#")).get("Items", []):
+def find_contact_item(scope, contact_id):
+    for item in table.query(KeyConditionExpression=Key("pk").eq(scoped_pk(scope)) & Key("sk").begins_with("CONTACT#")).get("Items", []):
         if item.get("id") == contact_id:
             return item
     return None
@@ -638,15 +665,15 @@ def get_contact_by_email(workspace_slug, email):
     return table.get_item(Key={"pk": workspace_pk(workspace_slug), "sk": f"CONTACT#{normalize_email(email)}"}).get("Item")
 
 
-def get_contact_by_id(workspace_slug, contact_id):
-    item = find_contact_item(workspace_slug, contact_id)
+def get_contact_by_id(scope, contact_id):
+    item = find_contact_item(scope, contact_id)
     if not item:
         raise ValueError("Contact not found.")
     return contact_shape(item)
 
 
 def update_contact(context, contact_id, data):
-    current = find_contact_item(context["workspaceSlug"], contact_id)
+    current = find_contact_item(context, contact_id)
     if not current:
         raise ValueError("Contact not found.")
     clean = clean_contact_data(data)
@@ -657,7 +684,7 @@ def update_contact(context, contact_id, data):
     if old_key["sk"] != updated["sk"]:
         table.delete_item(Key=old_key)
     table.put_item(Item=updated)
-    add_contact_activity(context["workspaceSlug"], contact_id, "ContactUpdated", "Contact updated", "Contact profile was edited.")
+    add_contact_activity(context, contact_id, "ContactUpdated", "Contact updated", "Contact profile was edited.")
     return contact_shape(updated)
 
 
@@ -688,40 +715,40 @@ def upsert_booking_contact(workspace_slug, customer, timezone):
     return item
 
 
-def add_contact_activity(workspace_slug, contact_id, activity_type, title, description="", metadata=None):
+def add_contact_activity(scope, contact_id, activity_type, title, description="", metadata=None):
     activity_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat() + "Z"
-    item = {"pk": workspace_pk(workspace_slug), "sk": f"ACTIVITY#{contact_id}#{now}#{activity_id}", "entity": "contactActivity", "id": activity_id, "contactId": contact_id, "type": activity_type, "title": title, "description": description, "metadata": metadata or {}, "occurredAtUtc": now}
+    item = {"pk": scoped_pk(scope), "sk": f"ACTIVITY#{contact_id}#{now}#{activity_id}", "entity": "contactActivity", "id": activity_id, "contactId": contact_id, "type": activity_type, "title": title, "description": description, "metadata": metadata or {}, "occurredAtUtc": now}
     table.put_item(Item=item)
     return item
 
 
-def list_contact_activity(workspace_slug, contact_id):
-    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with(f"ACTIVITY#{contact_id}#"), ScanIndexForward=False)
+def list_contact_activity(scope, contact_id):
+    result = table.query(KeyConditionExpression=Key("pk").eq(scoped_pk(scope)) & Key("sk").begins_with(f"ACTIVITY#{contact_id}#"), ScanIndexForward=False)
     return [{k: item.get(k) for k in ["id", "contactId", "type", "title", "description", "occurredAtUtc", "metadata"]} for item in result.get("Items", [])]
 
 
-def list_contact_tasks(workspace_slug, contact_id):
-    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with(f"TASK#{contact_id}#"))
+def list_contact_tasks(scope, contact_id):
+    result = table.query(KeyConditionExpression=Key("pk").eq(scoped_pk(scope)) & Key("sk").begins_with(f"TASK#{contact_id}#"))
     return [{k: item.get(k) for k in ["id", "contactId", "title", "description", "dueDate", "status", "createdAtUtc", "completedAtUtc"]} for item in result.get("Items", [])]
 
 
 def create_contact_task(context, contact_id, data):
-    if not find_contact_item(context["workspaceSlug"], contact_id):
+    if not find_contact_item(context, contact_id):
         raise ValueError("Contact not found.")
     title = str(data.get("title", "")).strip()
     if not title:
         raise ValueError("Task title is required.")
     task_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat() + "Z"
-    item = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"TASK#{contact_id}#{task_id}", "entity": "contactTask", "id": task_id, "contactId": contact_id, "title": title[:160], "description": str(data.get("description", "")).strip()[:1000], "dueDate": str(data.get("dueDate", "")).strip()[:20], "status": "Open", "createdAtUtc": now}
+    item = {"pk": data_pk(context), "sk": f"TASK#{contact_id}#{task_id}", "entity": "contactTask", "id": task_id, "contactId": contact_id, "title": title[:160], "description": str(data.get("description", "")).strip()[:1000], "dueDate": str(data.get("dueDate", "")).strip()[:20], "status": "Open", "createdAtUtc": now}
     table.put_item(Item=item)
-    add_contact_activity(context["workspaceSlug"], contact_id, "TaskCreated", "Task created", title)
+    add_contact_activity(context, contact_id, "TaskCreated", "Task created", title)
     return {k: item.get(k) for k in ["id", "contactId", "title", "description", "dueDate", "status", "createdAtUtc", "completedAtUtc"]}
 
 
 def update_contact_task(context, contact_id, task_id, data):
-    key = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"TASK#{contact_id}#{task_id}"}
+    key = {"pk": data_pk(context), "sk": f"TASK#{contact_id}#{task_id}"}
     current = table.get_item(Key=key).get("Item")
     if not current:
         raise ValueError("Task not found.")
@@ -729,7 +756,7 @@ def update_contact_task(context, contact_id, task_id, data):
     updated = {**current, "title": str(data.get("title", current.get("title", ""))).strip()[:160], "description": str(data.get("description", current.get("description", ""))).strip()[:1000], "dueDate": str(data.get("dueDate", current.get("dueDate", ""))).strip()[:20], "status": "Done" if status == "Done" else "Open"}
     if updated["status"] == "Done" and current.get("status") != "Done":
         updated["completedAtUtc"] = datetime.utcnow().isoformat() + "Z"
-        add_contact_activity(context["workspaceSlug"], contact_id, "TaskCompleted", "Task completed", updated["title"])
+        add_contact_activity(context, contact_id, "TaskCompleted", "Task completed", updated["title"])
     table.put_item(Item=updated)
     return {k: updated.get(k) for k in ["id", "contactId", "title", "description", "dueDate", "status", "createdAtUtc", "completedAtUtc"]}
 
@@ -747,12 +774,13 @@ def pipeline_shape(item):
     return {k: item.get(k) for k in ["id", "name", "description", "stages", "isDefault", "createdAtUtc", "updatedAtUtc"]}
 
 
-def list_pipelines(workspace_slug):
-    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("PIPELINE#"))
+def list_pipelines(scope):
+    pk = scoped_pk(scope)
+    result = table.query(KeyConditionExpression=Key("pk").eq(pk) & Key("sk").begins_with("PIPELINE#"))
     items = result.get("Items", [])
     if not items:
         now = datetime.utcnow().isoformat() + "Z"
-        item = {"pk": workspace_pk(workspace_slug), "sk": "PIPELINE#default", "entity": "pipeline", "id": "default", "name": "Sales Pipeline", "description": "Default opportunity pipeline.", "stages": default_pipeline_stages(), "isDefault": True, "createdAtUtc": now}
+        item = {"pk": pk, "sk": "PIPELINE#default", "entity": "pipeline", "id": "default", "name": "Sales Pipeline", "description": "Default opportunity pipeline.", "stages": default_pipeline_stages(), "isDefault": True, "createdAtUtc": now}
         table.put_item(Item=item)
         items = [item]
     return [pipeline_shape(item) for item in items]
@@ -777,23 +805,24 @@ def create_pipeline(context, data):
         raise ValueError("Pipeline name is required.")
     pipeline_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat() + "Z"
-    item = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"PIPELINE#{pipeline_id}", "entity": "pipeline", "id": pipeline_id, "name": name[:120], "description": str(data.get("description", "")).strip()[:1000], "stages": clean_stages(data.get("stages", [])), "isDefault": False, "createdAtUtc": now}
+    item = {"pk": data_pk(context), "sk": f"PIPELINE#{pipeline_id}", "entity": "pipeline", "id": pipeline_id, "subAccountId": context.get("subAccountId", ""), "name": name[:120], "description": str(data.get("description", "")).strip()[:1000], "stages": clean_stages(data.get("stages", [])), "isDefault": False, "createdAtUtc": now}
     table.put_item(Item=item)
     return pipeline_shape(item)
 
 
-def find_pipeline(workspace_slug, pipeline_id):
-    item = table.get_item(Key={"pk": workspace_pk(workspace_slug), "sk": f"PIPELINE#{pipeline_id}"}).get("Item")
+def find_pipeline(scope, pipeline_id):
+    pk = scoped_pk(scope)
+    item = table.get_item(Key={"pk": pk, "sk": f"PIPELINE#{pipeline_id}"}).get("Item")
     if item:
         return item
     if pipeline_id == "default":
-        list_pipelines(workspace_slug)
-        return table.get_item(Key={"pk": workspace_pk(workspace_slug), "sk": "PIPELINE#default"}).get("Item")
+        list_pipelines(scope)
+        return table.get_item(Key={"pk": pk, "sk": "PIPELINE#default"}).get("Item")
     return None
 
 
 def update_pipeline(context, pipeline_id, data):
-    current = find_pipeline(context["workspaceSlug"], pipeline_id)
+    current = find_pipeline(context, pipeline_id)
     if not current:
         raise ValueError("Pipeline not found.")
     updated = {**current, "name": str(data.get("name", current.get("name", ""))).strip()[:120], "description": str(data.get("description", current.get("description", ""))).strip()[:1000], "stages": clean_stages(data.get("stages", current.get("stages", []))), "updatedAtUtc": datetime.utcnow().isoformat() + "Z"}
@@ -802,13 +831,13 @@ def update_pipeline(context, pipeline_id, data):
 
 
 def delete_pipeline(context, pipeline_id):
-    current = find_pipeline(context["workspaceSlug"], pipeline_id)
+    current = find_pipeline(context, pipeline_id)
     if not current:
         raise ValueError("Pipeline not found.")
-    for opportunity in list_opportunities(context["workspaceSlug"]):
+    for opportunity in list_opportunities(context):
         if opportunity.get("pipelineId") == pipeline_id:
             raise ConflictError("This pipeline has opportunities, so it cannot be deleted.")
-    table.delete_item(Key={"pk": workspace_pk(context["workspaceSlug"]), "sk": f"PIPELINE#{pipeline_id}"})
+    table.delete_item(Key={"pk": data_pk(context), "sk": f"PIPELINE#{pipeline_id}"})
     return {"deleted": True, "id": pipeline_id}
 
 
@@ -816,18 +845,18 @@ def opportunity_shape(item):
     return {k: item.get(k) for k in ["id", "pipelineId", "stageId", "contactId", "contactName", "title", "value", "currency", "status", "expectedCloseDate", "source", "notes", "createdAtUtc", "updatedAtUtc"]}
 
 
-def list_opportunities(workspace_slug):
-    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("OPP#"))
+def list_opportunities(scope):
+    result = table.query(KeyConditionExpression=Key("pk").eq(scoped_pk(scope)) & Key("sk").begins_with("OPP#"))
     return [opportunity_shape(item) for item in result.get("Items", [])]
 
 
-def find_opportunity(workspace_slug, opportunity_id):
-    return table.get_item(Key={"pk": workspace_pk(workspace_slug), "sk": f"OPP#{opportunity_id}"}).get("Item")
+def find_opportunity(scope, opportunity_id):
+    return table.get_item(Key={"pk": scoped_pk(scope), "sk": f"OPP#{opportunity_id}"}).get("Item")
 
 
 def clean_opportunity(context, data, current=None):
     pipeline_id = str(data.get("pipelineId", current.get("pipelineId") if current else "")).strip()
-    pipeline = find_pipeline(context["workspaceSlug"], pipeline_id)
+    pipeline = find_pipeline(context, pipeline_id)
     if not pipeline:
         raise ValueError("Pipeline not found.")
     stage_id = str(data.get("stageId", current.get("stageId") if current else "")).strip()
@@ -840,7 +869,7 @@ def clean_opportunity(context, data, current=None):
     contact_id = str(data.get("contactId", current.get("contactId", "") if current else "") or "").strip()
     contact_name = str(data.get("contactName", current.get("contactName", "") if current else "") or "").strip()
     if contact_id:
-        contact = find_contact_item(context["workspaceSlug"], contact_id)
+        contact = find_contact_item(context, contact_id)
         if contact:
             contact_name = f"{contact.get('firstName', '')} {contact.get('lastName', '')}".strip()
     return {
@@ -862,22 +891,22 @@ def create_opportunity(context, data):
     clean = clean_opportunity(context, data)
     opportunity_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat() + "Z"
-    item = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"OPP#{opportunity_id}", "entity": "opportunity", "id": opportunity_id, **clean, "createdAtUtc": now, "updatedAtUtc": now}
+    item = {"pk": data_pk(context), "sk": f"OPP#{opportunity_id}", "entity": "opportunity", "id": opportunity_id, "subAccountId": context.get("subAccountId", ""), **clean, "createdAtUtc": now, "updatedAtUtc": now}
     table.put_item(Item=item)
     if item.get("contactId"):
-        add_contact_activity(context["workspaceSlug"], item["contactId"], "OpportunityCreated", "Opportunity created", item["title"], {"opportunityId": opportunity_id})
+        add_contact_activity(context, item["contactId"], "OpportunityCreated", "Opportunity created", item["title"], {"opportunityId": opportunity_id})
     return opportunity_shape(item)
 
 
 def update_opportunity(context, opportunity_id, data):
-    current = find_opportunity(context["workspaceSlug"], opportunity_id)
+    current = find_opportunity(context, opportunity_id)
     if not current:
         raise ValueError("Opportunity not found.")
     clean = clean_opportunity(context, data, current)
     updated = {**current, **clean, "updatedAtUtc": datetime.utcnow().isoformat() + "Z"}
     table.put_item(Item=updated)
     if updated.get("contactId") and current.get("stageId") != updated.get("stageId"):
-        add_contact_activity(context["workspaceSlug"], updated["contactId"], "OpportunityMoved", "Opportunity moved", updated["title"], {"opportunityId": opportunity_id, "stageId": updated["stageId"]})
+        add_contact_activity(context, updated["contactId"], "OpportunityMoved", "Opportunity moved", updated["title"], {"opportunityId": opportunity_id, "stageId": updated["stageId"]})
     return opportunity_shape(updated)
 
 
@@ -967,13 +996,13 @@ def automation_shape(item):
     return shaped
 
 
-def list_automations(workspace_slug):
-    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("AUTOMATION#"))
+def list_automations(scope):
+    result = table.query(KeyConditionExpression=Key("pk").eq(scoped_pk(scope)) & Key("sk").begins_with("AUTOMATION#"))
     return sorted([automation_shape(item) for item in result.get("Items", [])], key=lambda item: item.get("createdAtUtc", ""), reverse=True)
 
 
-def find_automation(workspace_slug, automation_id):
-    return table.get_item(Key={"pk": workspace_pk(workspace_slug), "sk": f"AUTOMATION#{automation_id}"}).get("Item")
+def find_automation(scope, automation_id):
+    return table.get_item(Key={"pk": scoped_pk(scope), "sk": f"AUTOMATION#{automation_id}"}).get("Item")
 
 
 def clean_automation(data, current=None):
@@ -1007,13 +1036,13 @@ def clean_automation(data, current=None):
 def create_automation(context, data):
     automation_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat() + "Z"
-    item = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"AUTOMATION#{automation_id}", "entity": "automation", "id": automation_id, **clean_automation(data), "createdAtUtc": now}
+    item = {"pk": data_pk(context), "sk": f"AUTOMATION#{automation_id}", "entity": "automation", "id": automation_id, "subAccountId": context.get("subAccountId", ""), **clean_automation(data), "createdAtUtc": now}
     table.put_item(Item=item)
     return automation_shape(item)
 
 
 def update_automation(context, automation_id, data):
-    current = find_automation(context["workspaceSlug"], automation_id)
+    current = find_automation(context, automation_id)
     if not current:
         raise ValueError("Automation not found.")
     updated = {**current, **clean_automation(data, current), "updatedAtUtc": datetime.utcnow().isoformat() + "Z"}
@@ -1022,10 +1051,10 @@ def update_automation(context, automation_id, data):
 
 
 def delete_automation(context, automation_id):
-    current = find_automation(context["workspaceSlug"], automation_id)
+    current = find_automation(context, automation_id)
     if not current:
         raise ValueError("Automation not found.")
-    table.delete_item(Key={"pk": workspace_pk(context["workspaceSlug"]), "sk": f"AUTOMATION#{automation_id}"})
+    table.delete_item(Key={"pk": data_pk(context), "sk": f"AUTOMATION#{automation_id}"})
     return {"deleted": True, "id": automation_id}
 
 
@@ -1033,13 +1062,13 @@ def site_page_shape(item):
     return {k: item.get(k) for k in ["id", "name", "slug", "status", "template", "seoTitle", "seoDescription", "theme", "sections", "createdAtUtc", "updatedAtUtc"]}
 
 
-def list_site_pages(workspace_slug):
-    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("SITEPAGE#"))
+def list_site_pages(scope):
+    result = table.query(KeyConditionExpression=Key("pk").eq(scoped_pk(scope)) & Key("sk").begins_with("SITEPAGE#"))
     return sorted([site_page_shape(item) for item in result.get("Items", [])], key=lambda item: item.get("updatedAtUtc", item.get("createdAtUtc", "")), reverse=True)
 
 
-def find_site_page(workspace_slug, page_id):
-    return table.get_item(Key={"pk": workspace_pk(workspace_slug), "sk": f"SITEPAGE#{page_id}"}).get("Item")
+def find_site_page(scope, page_id):
+    return table.get_item(Key={"pk": scoped_pk(scope), "sk": f"SITEPAGE#{page_id}"}).get("Item")
 
 
 def find_site_page_by_slug(workspace_slug, slug):
@@ -1098,20 +1127,20 @@ def create_site_page(context, data):
     page_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat() + "Z"
     clean = clean_site_page(data)
-    existing = find_site_page_by_slug(context["workspaceSlug"], clean["slug"])
+    existing = find_site_page_by_slug(context, clean["slug"])
     if existing:
         raise ConflictError("A page with this slug already exists.")
-    item = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"SITEPAGE#{page_id}", "entity": "sitePage", "id": page_id, **clean, "createdAtUtc": now, "updatedAtUtc": now}
+    item = {"pk": data_pk(context), "sk": f"SITEPAGE#{page_id}", "entity": "sitePage", "id": page_id, "subAccountId": context.get("subAccountId", ""), **clean, "createdAtUtc": now, "updatedAtUtc": now}
     table.put_item(Item=item)
     return site_page_shape(item)
 
 
 def update_site_page(context, page_id, data):
-    current = find_site_page(context["workspaceSlug"], page_id)
+    current = find_site_page(context, page_id)
     if not current:
         raise ValueError("Page not found.")
     clean = clean_site_page(data, current)
-    existing = find_site_page_by_slug(context["workspaceSlug"], clean["slug"])
+    existing = find_site_page_by_slug(context, clean["slug"])
     if existing and existing.get("id") != page_id:
         raise ConflictError("A page with this slug already exists.")
     updated = {**current, **clean, "updatedAtUtc": datetime.utcnow().isoformat() + "Z"}
@@ -1120,10 +1149,10 @@ def update_site_page(context, page_id, data):
 
 
 def delete_site_page(context, page_id):
-    current = find_site_page(context["workspaceSlug"], page_id)
+    current = find_site_page(context, page_id)
     if not current:
         raise ValueError("Page not found.")
-    table.delete_item(Key={"pk": workspace_pk(context["workspaceSlug"]), "sk": f"SITEPAGE#{page_id}"})
+    table.delete_item(Key={"pk": data_pk(context), "sk": f"SITEPAGE#{page_id}"})
     return {"deleted": True, "id": page_id}
 
 
@@ -1377,8 +1406,8 @@ def marketing_account_shape(item):
     return {k: item.get(k) for k in ["id", "provider", "accountName", "accountId", "status", "connectedBy", "createdAtUtc", "updatedAtUtc"]}
 
 
-def list_marketing_accounts(workspace_slug):
-    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("MKTACCOUNT#"))
+def list_marketing_accounts(scope):
+    result = table.query(KeyConditionExpression=Key("pk").eq(scoped_pk(scope)) & Key("sk").begins_with("MKTACCOUNT#"))
     return sorted([marketing_account_shape(item) for item in result.get("Items", [])], key=lambda item: item.get("createdAtUtc", ""))
 
 
@@ -1386,7 +1415,7 @@ def create_marketing_account(context, data):
     account_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat() + "Z"
     status = data.get("status", "NeedsAuth")
-    item = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"MKTACCOUNT#{account_id}", "entity": "marketingAccount", "id": account_id, "provider": str(data.get("provider", "Meta"))[:40], "accountName": str(data.get("accountName", "")).strip()[:120], "accountId": str(data.get("accountId", "")).strip()[:120], "status": status if status in {"Connected", "NeedsAuth", "Disabled"} else "NeedsAuth", "connectedBy": context["email"], "createdAtUtc": now, "updatedAtUtc": now}
+    item = {"pk": data_pk(context), "sk": f"MKTACCOUNT#{account_id}", "entity": "marketingAccount", "id": account_id, "subAccountId": context.get("subAccountId", ""), "provider": str(data.get("provider", "Meta"))[:40], "accountName": str(data.get("accountName", "")).strip()[:120], "accountId": str(data.get("accountId", "")).strip()[:120], "status": status if status in {"Connected", "NeedsAuth", "Disabled"} else "NeedsAuth", "connectedBy": context["email"], "createdAtUtc": now, "updatedAtUtc": now}
     if not item["accountName"]:
         raise ValueError("Account name is required.")
     table.put_item(Item=item)
@@ -1397,8 +1426,8 @@ def campaign_shape(item):
     return {k: item.get(k) for k in ["id", "name", "channel", "status", "objective", "audience", "content", "scheduledAt", "accountIds", "trackingCode", "createdAtUtc", "updatedAtUtc"]}
 
 
-def list_marketing_campaigns(workspace_slug):
-    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("MKTCAMPAIGN#"))
+def list_marketing_campaigns(scope):
+    result = table.query(KeyConditionExpression=Key("pk").eq(scoped_pk(scope)) & Key("sk").begins_with("MKTCAMPAIGN#"))
     return sorted([campaign_shape(item) for item in result.get("Items", [])], key=lambda item: item.get("createdAtUtc", ""), reverse=True)
 
 
@@ -1413,13 +1442,13 @@ def clean_campaign(data, current=None):
 def create_marketing_campaign(context, data):
     campaign_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat() + "Z"
-    item = {"pk": workspace_pk(context["workspaceSlug"]), "sk": f"MKTCAMPAIGN#{campaign_id}", "entity": "marketingCampaign", "id": campaign_id, **clean_campaign(data), "createdAtUtc": now, "updatedAtUtc": now}
+    item = {"pk": data_pk(context), "sk": f"MKTCAMPAIGN#{campaign_id}", "entity": "marketingCampaign", "id": campaign_id, "subAccountId": context.get("subAccountId", ""), **clean_campaign(data), "createdAtUtc": now, "updatedAtUtc": now}
     table.put_item(Item=item)
     return campaign_shape(item)
 
 
 def update_marketing_campaign(context, campaign_id, data):
-    current = table.get_item(Key={"pk": workspace_pk(context["workspaceSlug"]), "sk": f"MKTCAMPAIGN#{campaign_id}"}).get("Item")
+    current = table.get_item(Key={"pk": data_pk(context), "sk": f"MKTCAMPAIGN#{campaign_id}"}).get("Item")
     if not current:
         raise ValueError("Campaign not found.")
     updated = {**current, **clean_campaign(data, current), "updatedAtUtc": datetime.utcnow().isoformat() + "Z"}
@@ -1427,14 +1456,14 @@ def update_marketing_campaign(context, campaign_id, data):
     return campaign_shape(updated)
 
 
-def get_marketing_tracking(workspace_slug):
-    item = table.get_item(Key={"pk": workspace_pk(workspace_slug), "sk": "MARKETING#TRACKING"}).get("Item") or {}
+def get_marketing_tracking(scope):
+    item = table.get_item(Key={"pk": scoped_pk(scope), "sk": "MARKETING#TRACKING"}).get("Item") or {}
     return item.get("settings", {})
 
 
 def update_marketing_tracking(context, data):
     clean = {key: str(data.get(key, "")).strip()[:160] for key in ["metaPixelId", "googleTagId", "googleAnalyticsId", "defaultUtmSource", "defaultUtmMedium", "defaultUtmCampaign"]}
-    table.put_item(Item={"pk": workspace_pk(context["workspaceSlug"]), "sk": "MARKETING#TRACKING", "entity": "marketingTracking", "settings": clean, "updatedAtUtc": datetime.utcnow().isoformat() + "Z"})
+    table.put_item(Item={"pk": data_pk(context), "sk": "MARKETING#TRACKING", "entity": "marketingTracking", "subAccountId": context.get("subAccountId", ""), "settings": clean, "updatedAtUtc": datetime.utcnow().isoformat() + "Z"})
     return clean
 
 
@@ -1556,8 +1585,8 @@ def validate_booking_customer(data):
     return {"firstName": first_name[:80], "lastName": last_name[:80], "email": email[:254], "phone": phone[:30]}
 
 
-def list_bookings(workspace_slug=WORKSPACE_SLUG):
-    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(workspace_slug)) & Key("sk").begins_with("BOOKING#"))
+def list_bookings(scope=WORKSPACE_SLUG):
+    result = table.query(KeyConditionExpression=Key("pk").eq(scoped_pk(scope)) & Key("sk").begins_with("BOOKING#"))
     return [{k: item.get(k) for k in ["id", "appointmentTypeId", "userId", "status", "startUtc", "endUtc", "blockedStartUtc", "blockedEndUtc", "customerName", "customerEmail", "customerPhone", "notes"]} for item in result.get("Items", [])]
 
 

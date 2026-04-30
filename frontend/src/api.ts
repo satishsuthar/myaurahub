@@ -5,6 +5,7 @@ export const workspaceId = "11111111-1111-1111-1111-111111111111";
 export const userId = "22222222-2222-2222-2222-222222222222";
 export const authTokenKey = "calbook.authToken";
 export const authUserKey = "calbook.authUser";
+export const activeSubAccountKey = "calbook.activeSubAccountId";
 
 export type AppointmentType = {
   id: string;
@@ -315,16 +316,19 @@ export function saveAuth(auth: AuthResponse) {
 export function clearAuth() {
   localStorage.removeItem(authTokenKey);
   localStorage.removeItem(authUserKey);
+  localStorage.removeItem(activeSubAccountKey);
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getAuthToken();
+  const activeSubAccountId = localStorage.getItem(activeSubAccountKey);
   const response = await fetch(`${apiBase}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
       "X-Workspace-Id": workspaceId,
       "X-User-Id": userId,
+      ...(activeSubAccountId && activeSubAccountId !== "agency" ? { "X-Sub-Account-Id": activeSubAccountId } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {})
     }
