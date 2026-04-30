@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Calendar, Check, Clock, Copy, ExternalLink, Lock, LogOut, MapPin, Megaphone, Plus, Save, Settings, Trash2, Users, Workflow } from "lucide-react";
 import "./index.css";
@@ -278,31 +278,34 @@ function AdminApp() {
   const [noticeUnit, setNoticeUnit] = useState<"minutes" | "hours">("hours");
   const [activeSubAccountId, setActiveSubAccountId] = useState(() => localStorage.getItem(activeSubAccountKey) ?? "agency");
   const activeSubAccount = subAccounts.find((account) => account.id === activeSubAccountId);
+  const loadSequence = useRef(0);
 
   if (!authUser) {
     return <AuthPage onAuthenticated={setAuthUser} />;
   }
 
-  async function load() {
+  async function load(contextSubAccountId = activeSubAccountId, sequence = loadSequence.current) {
+    const scopedInit = { headers: { "X-Sub-Account-Id": contextSubAccountId === "agency" ? "" : contextSubAccountId } };
     const [appointmentData, bookingData, contactData, pipelineData, opportunityData, automationData, sitePageData, availabilityData, unavailableData, themeData, userData, roleData, subAccountData, whiteLabelData, marketingAccountData, campaignData, trackingData] = await Promise.all([
-      api<AppointmentType[]>("/api/calendar/appointment-types"),
-      api<Booking[]>("/api/calendar/bookings"),
-      api<Contact[]>("/api/contacts"),
-      api<Pipeline[]>("/api/opportunities/pipelines"),
-      api<Opportunity[]>("/api/opportunities"),
-      api<AutomationRule[]>("/api/automations"),
-      api<SitePage[]>("/api/sites/pages"),
-      api<AvailabilityRule[]>("/api/calendar/availability/me"),
-      api<UnavailabilityDate[]>("/api/calendar/unavailability"),
+      api<AppointmentType[]>("/api/calendar/appointment-types", scopedInit),
+      api<Booking[]>("/api/calendar/bookings", scopedInit),
+      api<Contact[]>("/api/contacts", scopedInit),
+      api<Pipeline[]>("/api/opportunities/pipelines", scopedInit),
+      api<Opportunity[]>("/api/opportunities", scopedInit),
+      api<AutomationRule[]>("/api/automations", scopedInit),
+      api<SitePage[]>("/api/sites/pages", scopedInit),
+      api<AvailabilityRule[]>("/api/calendar/availability/me", scopedInit),
+      api<UnavailabilityDate[]>("/api/calendar/unavailability", scopedInit),
       api<ThemeConfig>("/api/workspace/theme"),
       api<WorkspaceUser[]>("/api/workspace/users").catch(() => []),
       api<WorkspaceRole[]>("/api/workspace/roles").catch(() => []),
       api<SubAccount[]>("/api/workspace/subaccounts").catch(() => []),
       api<WhiteLabelSettings>("/api/workspace/white-label").catch(() => ({ brandName: authUser?.workspaceName ?? "", agencyMode: true, hidePoweredBy: false })),
-      api<MarketingAccount[]>("/api/marketing/accounts").catch(() => []),
-      api<MarketingCampaign[]>("/api/marketing/campaigns").catch(() => []),
-      api<MarketingTracking>("/api/marketing/tracking").catch(() => ({}))
+      api<MarketingAccount[]>("/api/marketing/accounts", scopedInit).catch(() => []),
+      api<MarketingCampaign[]>("/api/marketing/campaigns", scopedInit).catch(() => []),
+      api<MarketingTracking>("/api/marketing/tracking", scopedInit).catch(() => ({}))
     ]);
+    if (sequence !== loadSequence.current) return;
     setAppointments(appointmentData);
     setBookings(bookingData);
     setContacts(contactData);
@@ -329,7 +332,9 @@ function AdminApp() {
   }
 
   useEffect(() => {
-    load().catch((error) => {
+    const sequence = ++loadSequence.current;
+    load(activeSubAccountId, sequence).catch((error) => {
+      if (sequence !== loadSequence.current) return;
       if (error.message.includes("401") || error.message.toLowerCase().includes("login required")) {
         clearAuth();
         setAuthUser(null);
