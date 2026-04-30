@@ -198,6 +198,8 @@ export type AuthUser = {
   workspaceSlug: string;
   workspaceName: string;
   userId: string;
+  role?: string;
+  permissions?: Record<string, boolean>;
 };
 
 export type AuthResponse = {
@@ -217,6 +219,29 @@ export type ThemeConfig = {
   muted: string;
   displayFont: string;
   bodyFont: string;
+};
+
+export type WorkspaceUser = {
+  id: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  role: string;
+  permissions: Record<string, boolean>;
+  status: "Active" | "Inactive";
+  temporaryPassword?: string;
+  createdAtUtc?: string;
+  updatedAtUtc?: string;
+};
+
+export type WhiteLabelSettings = {
+  brandName: string;
+  supportEmail?: string;
+  customDomain?: string;
+  logoUrl?: string;
+  agencyMode: boolean;
+  resellerName?: string;
+  hidePoweredBy: boolean;
 };
 
 export function getAuthToken() {

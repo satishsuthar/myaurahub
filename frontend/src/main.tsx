@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Calendar, Check, Clock, Copy, ExternalLink, Lock, LogOut, MapPin, Plus, Save, Settings, Trash2, Users, Workflow } from "lucide-react";
 import "./index.css";
-import { api, apiBase, AppointmentType, AutomationAction, AutomationRule, AvailabilityRule, AuthResponse, AuthUser, Booking, Contact, ContactActivity, ContactCustomField, ContactTask, Opportunity, Pipeline, SitePage, Slot, ThemeConfig, UnavailabilityDate, clearAuth, getAuthUser, saveAuth, userId } from "./api";
+import { api, apiBase, AppointmentType, AutomationAction, AutomationRule, AvailabilityRule, AuthResponse, AuthUser, Booking, Contact, ContactActivity, ContactCustomField, ContactTask, Opportunity, Pipeline, SitePage, Slot, ThemeConfig, UnavailabilityDate, WhiteLabelSettings, WorkspaceUser, clearAuth, getAuthUser, saveAuth, userId } from "./api";
 
 const defaultAppointment: Omit<AppointmentType, "id" | "isActive"> = {
   assignedUserId: userId,
@@ -181,6 +181,15 @@ const customFieldTypes = [
   { group: "Options", options: [["dropdownSingle", "Dropdown (single)"], ["dropdownMultiple", "Dropdown (multiple)"], ["radio", "Radio"], ["checkbox", "Checkbox"]] },
   { group: "Others", options: [["date", "Date picker"], ["file", "File upload"], ["signature", "Signature"]] }
 ];
+const permissionKeys = ["scheduling", "contacts", "opportunities", "automations", "sites", "settings", "team", "billing"];
+const roleTemplates: Record<string, Record<string, boolean>> = {
+  Owner: { scheduling: true, contacts: true, opportunities: true, automations: true, sites: true, settings: true, team: true, billing: true },
+  Admin: { scheduling: true, contacts: true, opportunities: true, automations: true, sites: true, settings: true, team: true, billing: false },
+  Manager: { scheduling: true, contacts: true, opportunities: true, automations: true, sites: true, settings: false, team: false, billing: false },
+  Staff: { scheduling: true, contacts: true, opportunities: false, automations: false, sites: false, settings: false, team: false, billing: false },
+  Viewer: { scheduling: true, contacts: true, opportunities: true, automations: true, sites: true, settings: false, team: false, billing: false }
+};
+const emptyTeamUser = { firstName: "", lastName: "", email: "", password: "", role: "Staff", permissions: roleTemplates.Staff, status: "Active" as "Active" | "Inactive" };
 
 function Router() {
   const pathParts = window.location.pathname.split("/").filter(Boolean);
@@ -198,6 +207,10 @@ function AdminApp() {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [automations, setAutomations] = useState<AutomationRule[]>([]);
   const [sitePages, setSitePages] = useState<SitePage[]>([]);
+  const [workspaceUsers, setWorkspaceUsers] = useState<WorkspaceUser[]>([]);
+  const [whiteLabel, setWhiteLabel] = useState<WhiteLabelSettings>({ brandName: "", supportEmail: "", customDomain: "", logoUrl: "", agencyMode: true, resellerName: "", hidePoweredBy: false });
+  const [teamForm, setTeamForm] = useState(emptyTeamUser);
+  const [editingTeamUserId, setEditingTeamUserId] = useState<string | null>(null);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>("");
   const [pipelineForm, setPipelineForm] = useState(emptyPipeline);
   const [opportunityForm, setOpportunityForm] = useState(emptyOpportunity);
@@ -240,7 +253,7 @@ function AdminApp() {
   }
 
   async function load() {
-    const [appointmentData, bookingData, contactData, pipelineData, opportunityData, automationData, sitePageData, availabilityData, unavailableData, themeData] = await Promise.all([
+    const [appointmentData, bookingData, contactData, pipelineData, opportunityData, automationData, sitePageData, availabilityData, unavailableData, themeData, userData, whiteLabelData] = await Promise.all([
       api<AppointmentType[]>("/api/calendar/appointment-types"),
       api<Booking[]>("/api/calendar/bookings"),
       api<Contact[]>("/api/contacts"),
@@ -250,7 +263,9 @@ function AdminApp() {
       api<SitePage[]>("/api/sites/pages"),
       api<AvailabilityRule[]>("/api/calendar/availability/me"),
       api<UnavailabilityDate[]>("/api/calendar/unavailability"),
-      api<ThemeConfig>("/api/workspace/theme")
+      api<ThemeConfig>("/api/workspace/theme"),
+      api<WorkspaceUser[]>("/api/workspace/users").catch(() => []),
+      api<WhiteLabelSettings>("/api/workspace/white-label").catch(() => ({ brandName: authUser?.workspaceName ?? "", agencyMode: true, hidePoweredBy: false }))
     ]);
     setAppointments(appointmentData);
     setBookings(bookingData);
@@ -263,6 +278,8 @@ function AdminApp() {
     setRules(availabilityData.map((rule) => ({ ...rule, startTime: rule.startTime.slice(0, 5), endTime: rule.endTime.slice(0, 5) })));
     setUnavailability(unavailableData);
     setTheme(themeData);
+    setWorkspaceUsers(userData);
+    setWhiteLabel({ ...{ brandName: authUser?.workspaceName ?? "", supportEmail: "", customDomain: "", logoUrl: "", agencyMode: true, resellerName: "", hidePoweredBy: false }, ...whiteLabelData });
   }
 
   useEffect(() => {
@@ -387,6 +404,45 @@ function AdminApp() {
     } finally {
       setSavingTheme(false);
     }
+  }
+
+  function editTeamUser(member: WorkspaceUser) {
+    setEditingTeamUserId(member.id);
+    setTeamForm({ firstName: member.firstName ?? "", lastName: member.lastName ?? "", email: member.email, password: "", role: member.role, permissions: member.permissions ?? roleTemplates[member.role] ?? roleTemplates.Staff, status: member.status });
+  }
+
+  async function saveTeamUser() {
+    if (!teamForm.email.trim()) {
+      setMessageTone("error");
+      setMessage("Team member email is required.");
+      return;
+    }
+    const saved = await api<WorkspaceUser>(editingTeamUserId ? `/api/workspace/users/${editingTeamUserId}` : "/api/workspace/users", {
+      method: editingTeamUserId ? "PUT" : "POST",
+      body: JSON.stringify(teamForm)
+    });
+    setWorkspaceUsers(editingTeamUserId ? workspaceUsers.map((item) => item.id === saved.id ? saved : item) : [...workspaceUsers, saved]);
+    setTeamForm(emptyTeamUser);
+    setEditingTeamUserId(null);
+    setMessageTone("success");
+    setMessage(saved.temporaryPassword ? `User saved. Temporary password: ${saved.temporaryPassword}` : "User saved.");
+  }
+
+  async function toggleTeamUser(member: WorkspaceUser) {
+    const saved = await api<WorkspaceUser>(`/api/workspace/users/${member.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ ...member, status: member.status === "Active" ? "Inactive" : "Active" })
+    });
+    setWorkspaceUsers(workspaceUsers.map((item) => item.id === saved.id ? saved : item));
+    setMessageTone("success");
+    setMessage(saved.status === "Active" ? "User activated." : "User deactivated.");
+  }
+
+  async function saveWhiteLabel() {
+    const saved = await api<WhiteLabelSettings>("/api/workspace/white-label", { method: "PUT", body: JSON.stringify(whiteLabel) });
+    setWhiteLabel(saved);
+    setMessageTone("success");
+    setMessage("White-label settings saved.");
   }
 
   async function openContact(contact: Contact) {
@@ -1678,7 +1734,71 @@ function AdminApp() {
               <div className="space-y-2 text-sm text-stone-600">
                 <p>Workspace: {authUser.workspaceName}</p>
                 <p>Workspace slug: /{authUser.workspaceSlug}</p>
+                <p>Plan: Agency workspace with team, role, and white-label controls.</p>
                 <p>Branding, fonts, and global app appearance apply across modules.</p>
+              </div>
+            </Panel>
+            <Panel title="Agency White Label" icon={<Settings size={18} />}>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Brand name" value={whiteLabel.brandName ?? ""} onChange={(value) => setWhiteLabel({ ...whiteLabel, brandName: value })} />
+                <Field label="Reseller / agency name" value={whiteLabel.resellerName ?? ""} onChange={(value) => setWhiteLabel({ ...whiteLabel, resellerName: value })} />
+                <Field label="Support email" value={whiteLabel.supportEmail ?? ""} onChange={(value) => setWhiteLabel({ ...whiteLabel, supportEmail: value })} />
+                <Field label="Custom domain" value={whiteLabel.customDomain ?? ""} onChange={(value) => setWhiteLabel({ ...whiteLabel, customDomain: value })} />
+                <Field label="Logo URL" value={whiteLabel.logoUrl ?? ""} onChange={(value) => setWhiteLabel({ ...whiteLabel, logoUrl: value })} />
+                <label className="flex items-center gap-2 text-sm font-bold text-[#334155]"><input type="checkbox" checked={whiteLabel.agencyMode} onChange={(event) => setWhiteLabel({ ...whiteLabel, agencyMode: event.target.checked })} /> Agency / reseller mode</label>
+                <label className="flex items-center gap-2 text-sm font-bold text-[#334155]"><input type="checkbox" checked={whiteLabel.hidePoweredBy} onChange={(event) => setWhiteLabel({ ...whiteLabel, hidePoweredBy: event.target.checked })} /> Hide powered-by branding</label>
+              </div>
+              <button className="mt-5 inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveWhiteLabel}><Save size={16} /> Save white label</button>
+            </Panel>
+            <Panel title="Users, Roles & Permissions" icon={<Users size={18} />}>
+              <div className="grid gap-4 xl:grid-cols-[1fr_1.1fr]">
+                <div className="rounded-md border border-[#dde3ec] bg-[#fbfcff] p-3">
+                  <div className="mb-3 text-sm font-black">{editingTeamUserId ? "Edit user" : "Create user"}</div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <Field label="First name" value={teamForm.firstName} onChange={(value) => setTeamForm({ ...teamForm, firstName: value })} />
+                    <Field label="Last name" value={teamForm.lastName} onChange={(value) => setTeamForm({ ...teamForm, lastName: value })} />
+                    <Field label="Email" value={teamForm.email} onChange={(value) => setTeamForm({ ...teamForm, email: value })} />
+                    <Field label={editingTeamUserId ? "New password optional" : "Password optional"} type="password" value={teamForm.password} onChange={(value) => setTeamForm({ ...teamForm, password: value })} />
+                    <label className="text-sm font-bold text-[#334155]">Role
+                      <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={teamForm.role} onChange={(event) => setTeamForm({ ...teamForm, role: event.target.value, permissions: roleTemplates[event.target.value] ?? roleTemplates.Staff })}>
+                        {Object.keys(roleTemplates).map((role) => <option key={role} value={role}>{role}</option>)}
+                      </select>
+                    </label>
+                    <label className="text-sm font-bold text-[#334155]">Status
+                      <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={teamForm.status} onChange={(event) => setTeamForm({ ...teamForm, status: event.target.value as "Active" | "Inactive" })}>
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    {permissionKeys.map((key) => <label key={key} className="flex items-center gap-2 rounded-md border border-[#dde3ec] bg-white p-2 text-sm font-bold capitalize text-[#334155]"><input type="checkbox" checked={Boolean(teamForm.permissions[key])} onChange={(event) => setTeamForm({ ...teamForm, permissions: { ...teamForm.permissions, [key]: event.target.checked } })} /> {key}</label>)}
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveTeamUser}><Save size={16} /> Save user</button>
+                    {editingTeamUserId && <button className="rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" onClick={() => { setEditingTeamUserId(null); setTeamForm(emptyTeamUser); }}>Cancel</button>}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {workspaceUsers.map((member) => (
+                    <div key={member.id} className="rounded-md border border-[#dde3ec] bg-white p-3">
+                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <div className="font-black text-[#16202a]">{`${member.firstName ?? ""} ${member.lastName ?? ""}`.trim() || member.email}</div>
+                          <div className="text-sm text-[#64748b]">{member.email}</div>
+                          <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-black">
+                            <span className="rounded-full bg-[#eef5ff] px-2 py-1 text-[#2563eb]">{member.role}</span>
+                            <span className={`rounded-full px-2 py-1 ${member.status === "Active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{member.status}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => editTeamUser(member)}>Edit</button>
+                          <button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => toggleTeamUser(member)}>{member.status === "Active" ? "Deactivate" : "Activate"}</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </Panel>
             <Panel title="Brand Theme" icon={<Settings size={18} />}>

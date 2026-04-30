@@ -161,6 +161,17 @@ def handler(event, _context):
             return response(200, get_theme(context["workspaceSlug"]))
         if path == "/api/workspace/theme" and method == "PUT":
             return response(200, update_theme(context["workspaceSlug"], body))
+        if path == "/api/workspace/users" and method == "GET":
+            return response(200, list_workspace_users(context))
+        if path == "/api/workspace/users" and method == "POST":
+            return response(201, create_workspace_user(context, body))
+        if path.startswith("/api/workspace/users/") and method == "PUT":
+            member_id = path.split("/")[4]
+            return response(200, update_workspace_user(context, member_id, body))
+        if path == "/api/workspace/white-label" and method == "GET":
+            return response(200, get_white_label(context["workspaceSlug"]))
+        if path == "/api/workspace/white-label" and method == "PUT":
+            return response(200, update_white_label(context, body))
         return response(404, {"error": "Not found"})
     except ValueError as exc:
         return response(400, {"error": str(exc)})
@@ -241,7 +252,71 @@ def auth_context(event):
     if not header or not header.lower().startswith("bearer "):
         raise PermissionError("Login required.")
     payload = verify_token(header.split(" ", 1)[1])
-    return {"userId": payload["userId"], "workspaceSlug": payload["workspaceSlug"], "email": payload["email"], "workspaceName": payload.get("workspaceName", "Workspace")}
+    user = table.get_item(Key={"pk": f"AUTH#{payload['email']}", "sk": "USER"}).get("Item") or {}
+    if user and user.get("status", "Active") != "Active":
+        raise PermissionError("This user is inactive.")
+    return {
+        "userId": payload["userId"],
+        "workspaceSlug": payload["workspaceSlug"],
+        "email": payload["email"],
+        "workspaceName": payload.get("workspaceName", "Workspace"),
+        "role": user.get("role", payload.get("role", "Owner")),
+        "permissions": user.get("permissions", payload.get("permissions", DEFAULT_ROLE_PERMISSIONS["Owner"])),
+    }
+
+
+DEFAULT_ROLE_PERMISSIONS = {
+    "Owner": {"scheduling": True, "contacts": True, "opportunities": True, "automations": True, "sites": True, "settings": True, "team": True, "billing": True},
+    "Admin": {"scheduling": True, "contacts": True, "opportunities": True, "automations": True, "sites": True, "settings": True, "team": True, "billing": False},
+    "Manager": {"scheduling": True, "contacts": True, "opportunities": True, "automations": True, "sites": True, "settings": False, "team": False, "billing": False},
+    "Staff": {"scheduling": True, "contacts": True, "opportunities": False, "automations": False, "sites": False, "settings": False, "team": False, "billing": False},
+    "Viewer": {"scheduling": True, "contacts": True, "opportunities": True, "automations": True, "sites": True, "settings": False, "team": False, "billing": False},
+}
+
+
+def require_workspace_admin(context):
+    if context.get("role") not in {"Owner", "Admin"} and not context.get("permissions", {}).get("team"):
+        raise PermissionError("You do not have access to manage users.")
+
+
+def default_white_label(workspace_name):
+    return {
+        "brandName": workspace_name,
+        "supportEmail": "",
+        "customDomain": "",
+        "logoUrl": "",
+        "agencyMode": True,
+        "resellerName": "",
+        "hidePoweredBy": False,
+    }
+
+
+def workspace_user_item(workspace_slug, auth_item):
+    default_role = "Owner" if auth_item.get("id") == USER_ID else "Staff"
+    return {
+        "pk": workspace_pk(workspace_slug),
+        "sk": f"USER#{auth_item['id']}",
+        "entity": "workspaceUser",
+        "id": auth_item["id"],
+        "email": auth_item["email"],
+        "firstName": auth_item.get("firstName", ""),
+        "lastName": auth_item.get("lastName", ""),
+        "role": auth_item.get("role", default_role),
+        "permissions": auth_item.get("permissions", DEFAULT_ROLE_PERMISSIONS[default_role]),
+        "status": auth_item.get("status", "Active"),
+        "createdAtUtc": auth_item.get("createdAtUtc"),
+        "updatedAtUtc": auth_item.get("updatedAtUtc", auth_item.get("createdAtUtc")),
+    }
+
+
+def seed_owner_auth_user(workspace_slug, user_id, workspace_name, now):
+    existing = table.get_item(Key={"pk": "AUTH#test.admin@myaurahub.test", "sk": "USER"}).get("Item")
+    if existing:
+        return
+    salt, password_hash = hash_password("TestAdmin123!")
+    auth_item = {"pk": "AUTH#test.admin@myaurahub.test", "sk": "USER", "entity": "authUser", "id": user_id, "email": "test.admin@myaurahub.test", "firstName": "Test", "lastName": "Admin", "workspaceSlug": workspace_slug, "workspaceName": workspace_name, "role": "Owner", "permissions": DEFAULT_ROLE_PERMISSIONS["Owner"], "status": "Active", "passwordSalt": salt, "passwordHash": password_hash, "createdAtUtc": now}
+    table.put_item(Item=auth_item)
+    table.put_item(Item=workspace_user_item(workspace_slug, auth_item))
 
 
 def signup(data):
@@ -256,11 +331,13 @@ def signup(data):
     workspace_id = str(uuid.uuid4())
     salt, password_hash = hash_password(password)
     now = datetime.utcnow().isoformat() + "Z"
-    table.put_item(Item={"pk": workspace_pk(workspace_slug), "sk": "META", "id": workspace_id, "name": workspace_name, "slug": workspace_slug, "timezone": TZ, "theme": DEFAULT_THEME, "entity": "workspace", "createdAtUtc": now})
-    table.put_item(Item={"pk": f"AUTH#{email}", "sk": "USER", "entity": "authUser", "id": user_id, "email": email, "workspaceSlug": workspace_slug, "workspaceName": workspace_name, "passwordSalt": salt, "passwordHash": password_hash, "createdAtUtc": now})
+    table.put_item(Item={"pk": workspace_pk(workspace_slug), "sk": "META", "id": workspace_id, "name": workspace_name, "slug": workspace_slug, "timezone": TZ, "theme": DEFAULT_THEME, "whiteLabel": default_white_label(workspace_name), "entity": "workspace", "createdAtUtc": now})
+    auth_item = {"pk": f"AUTH#{email}", "sk": "USER", "entity": "authUser", "id": user_id, "email": email, "firstName": "", "lastName": "", "workspaceSlug": workspace_slug, "workspaceName": workspace_name, "role": "Owner", "permissions": DEFAULT_ROLE_PERMISSIONS["Owner"], "status": "Active", "passwordSalt": salt, "passwordHash": password_hash, "createdAtUtc": now}
+    table.put_item(Item=auth_item)
+    table.put_item(Item=workspace_user_item(workspace_slug, auth_item))
     seed_workspace_defaults(workspace_slug, workspace_id, user_id, workspace_name, now)
-    token = sign_token({"userId": user_id, "workspaceSlug": workspace_slug, "email": email, "workspaceName": workspace_name})
-    return {"token": token, "user": {"email": email, "workspaceSlug": workspace_slug, "workspaceName": workspace_name, "userId": user_id}}
+    token = sign_token({"userId": user_id, "workspaceSlug": workspace_slug, "email": email, "workspaceName": workspace_name, "role": "Owner", "permissions": DEFAULT_ROLE_PERMISSIONS["Owner"]})
+    return {"token": token, "user": {"email": email, "workspaceSlug": workspace_slug, "workspaceName": workspace_name, "userId": user_id, "role": "Owner", "permissions": DEFAULT_ROLE_PERMISSIONS["Owner"]}}
 
 
 def login(data):
@@ -268,8 +345,12 @@ def login(data):
     user = table.get_item(Key={"pk": f"AUTH#{email}", "sk": "USER"}).get("Item")
     if not user or not verify_password(data["password"], user["passwordSalt"], user["passwordHash"]):
         raise PermissionError("Invalid email or password.")
-    token = sign_token({"userId": user["id"], "workspaceSlug": user["workspaceSlug"], "email": email, "workspaceName": user.get("workspaceName", "Workspace")})
-    return {"token": token, "user": {"email": email, "workspaceSlug": user["workspaceSlug"], "workspaceName": user.get("workspaceName", "Workspace"), "userId": user["id"]}}
+    if user.get("status", "Active") != "Active":
+        raise PermissionError("This user is inactive.")
+    role = user.get("role", "Owner")
+    permissions = user.get("permissions", DEFAULT_ROLE_PERMISSIONS.get(role, DEFAULT_ROLE_PERMISSIONS["Staff"]))
+    token = sign_token({"userId": user["id"], "workspaceSlug": user["workspaceSlug"], "email": email, "workspaceName": user.get("workspaceName", "Workspace"), "role": role, "permissions": permissions})
+    return {"token": token, "user": {"email": email, "workspaceSlug": user["workspaceSlug"], "workspaceName": user.get("workspaceName", "Workspace"), "userId": user["id"], "role": role, "permissions": permissions}}
 
 
 def ensure_seed():
@@ -278,7 +359,8 @@ def ensure_seed():
         return
 
     now = datetime.utcnow().isoformat() + "Z"
-    table.put_item(Item={"pk": workspace_pk(), "sk": "META", "id": WORKSPACE_ID, "name": "Acme Coaching", "slug": WORKSPACE_SLUG, "timezone": TZ, "theme": DEFAULT_THEME, "entity": "workspace", "createdAtUtc": now})
+    table.put_item(Item={"pk": workspace_pk(), "sk": "META", "id": WORKSPACE_ID, "name": "Acme Coaching", "slug": WORKSPACE_SLUG, "timezone": TZ, "theme": DEFAULT_THEME, "whiteLabel": default_white_label("Acme Coaching"), "entity": "workspace", "createdAtUtc": now})
+    seed_owner_auth_user(WORKSPACE_SLUG, USER_ID, "Acme Coaching", now)
     seed_workspace_defaults(WORKSPACE_SLUG, WORKSPACE_ID, USER_ID, "Acme Coaching", now)
 
 
@@ -1064,6 +1146,89 @@ def update_theme(workspace_slug, data):
     workspace["updatedAtUtc"] = datetime.utcnow().isoformat() + "Z"
     table.put_item(Item=workspace)
     return theme
+
+
+def workspace_user_shape(item):
+    return {k: item.get(k) for k in ["id", "email", "firstName", "lastName", "role", "permissions", "status", "createdAtUtc", "updatedAtUtc"]}
+
+
+def list_workspace_users(context):
+    require_workspace_admin(context)
+    result = table.query(KeyConditionExpression=Key("pk").eq(workspace_pk(context["workspaceSlug"])) & Key("sk").begins_with("USER#"))
+    users = [workspace_user_shape(item) for item in result.get("Items", [])]
+    if not users:
+        auth = table.get_item(Key={"pk": f"AUTH#{context['email']}", "sk": "USER"}).get("Item")
+        if auth:
+            item = workspace_user_item(context["workspaceSlug"], auth)
+            table.put_item(Item=item)
+            users = [workspace_user_shape(item)]
+    return sorted(users, key=lambda item: item.get("createdAtUtc", ""))
+
+
+def clean_permissions(data, role):
+    defaults = DEFAULT_ROLE_PERMISSIONS.get(role, DEFAULT_ROLE_PERMISSIONS["Staff"])
+    raw = data.get("permissions", {}) if isinstance(data.get("permissions", {}), dict) else {}
+    return {key: bool(raw.get(key, defaults.get(key, False))) for key in DEFAULT_ROLE_PERMISSIONS["Owner"]}
+
+
+def create_workspace_user(context, data):
+    require_workspace_admin(context)
+    email = normalize_email(data.get("email", ""))
+    if not email:
+        raise ValueError("Email is required.")
+    if table.get_item(Key={"pk": f"AUTH#{email}", "sk": "USER"}).get("Item"):
+        raise ValueError("A user already exists for this email.")
+    password = data.get("password") or f"Welcome{secrets.randbelow(9000) + 1000}!"
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters.")
+    role = data.get("role") if data.get("role") in DEFAULT_ROLE_PERMISSIONS else "Staff"
+    now = datetime.utcnow().isoformat() + "Z"
+    user_id = str(uuid.uuid4())
+    salt, password_hash = hash_password(password)
+    auth_item = {"pk": f"AUTH#{email}", "sk": "USER", "entity": "authUser", "id": user_id, "email": email, "firstName": str(data.get("firstName", "")).strip()[:80], "lastName": str(data.get("lastName", "")).strip()[:80], "workspaceSlug": context["workspaceSlug"], "workspaceName": context["workspaceName"], "role": role, "permissions": clean_permissions(data, role), "status": data.get("status", "Active") if data.get("status") in {"Active", "Inactive"} else "Active", "passwordSalt": salt, "passwordHash": password_hash, "createdAtUtc": now, "updatedAtUtc": now}
+    table.put_item(Item=auth_item)
+    item = workspace_user_item(context["workspaceSlug"], auth_item)
+    table.put_item(Item=item)
+    return {**workspace_user_shape(item), "temporaryPassword": password if not data.get("password") else ""}
+
+
+def update_workspace_user(context, member_id, data):
+    require_workspace_admin(context)
+    current = table.get_item(Key={"pk": workspace_pk(context["workspaceSlug"]), "sk": f"USER#{member_id}"}).get("Item")
+    if not current:
+        raise ValueError("User not found.")
+    role = data.get("role") if data.get("role") in DEFAULT_ROLE_PERMISSIONS else current.get("role", "Staff")
+    if current["id"] == context["userId"] and role != "Owner":
+        raise ValueError("You cannot remove your own owner role.")
+    updated = {**current, "firstName": str(data.get("firstName", current.get("firstName", ""))).strip()[:80], "lastName": str(data.get("lastName", current.get("lastName", ""))).strip()[:80], "role": role, "permissions": clean_permissions(data, role), "status": data.get("status", current.get("status", "Active")) if data.get("status", current.get("status", "Active")) in {"Active", "Inactive"} else "Active", "updatedAtUtc": datetime.utcnow().isoformat() + "Z"}
+    table.put_item(Item=updated)
+    auth = table.get_item(Key={"pk": f"AUTH#{current['email']}", "sk": "USER"}).get("Item")
+    if auth:
+        auth_update = {**auth, **{k: updated[k] for k in ["firstName", "lastName", "role", "permissions", "status", "updatedAtUtc"]}}
+        if data.get("password"):
+            if len(data["password"]) < 8:
+                raise ValueError("Password must be at least 8 characters.")
+            salt, password_hash = hash_password(data["password"])
+            auth_update["passwordSalt"] = salt
+            auth_update["passwordHash"] = password_hash
+        table.put_item(Item=auth_update)
+    return workspace_user_shape(updated)
+
+
+def get_white_label(workspace_slug):
+    workspace = get_workspace(workspace_slug)
+    return {**default_white_label(workspace.get("name", "Workspace")), **(workspace.get("whiteLabel") or {})}
+
+
+def update_white_label(context, data):
+    require_workspace_admin(context)
+    current = get_white_label(context["workspaceSlug"])
+    clean = {"brandName": str(data.get("brandName", current.get("brandName", context["workspaceName"]))).strip()[:120], "supportEmail": normalize_email(str(data.get("supportEmail", current.get("supportEmail", "")))) if data.get("supportEmail", current.get("supportEmail", "")) else "", "customDomain": str(data.get("customDomain", current.get("customDomain", ""))).strip().lower()[:120], "logoUrl": str(data.get("logoUrl", current.get("logoUrl", ""))).strip()[:500], "agencyMode": bool(data.get("agencyMode", current.get("agencyMode", True))), "resellerName": str(data.get("resellerName", current.get("resellerName", ""))).strip()[:120], "hidePoweredBy": bool(data.get("hidePoweredBy", current.get("hidePoweredBy", False)))}
+    workspace = get_workspace(context["workspaceSlug"])
+    workspace["whiteLabel"] = clean
+    workspace["updatedAtUtc"] = datetime.utcnow().isoformat() + "Z"
+    table.put_item(Item=workspace)
+    return clean
 
 
 def handle_public(method, path, query, body):
