@@ -122,6 +122,12 @@ const emptySitePage: Omit<SitePage, "id"> = {
   ]
 };
 const siteSectionTypes: SitePage["sections"][number]["type"][] = ["hero", "text", "image", "columns", "split", "features", "cta"];
+const sitePagePresets = [
+  { id: "blank", label: "Blank page" },
+  { id: "coach", label: "Coach" },
+  { id: "clinic", label: "Clinic" },
+  { id: "personal", label: "Personal brand" }
+];
 const customFieldTypes = [
   { group: "Text input", options: [["text", "Single line"], ["multiline", "Multiline"], ["textList", "Text box list"]] },
   { group: "Values", options: [["number", "Number"], ["phone", "Phone"], ["currency", "Currency"]] },
@@ -156,6 +162,8 @@ function AdminApp() {
   const [siteForm, setSiteForm] = useState<Omit<SitePage, "id">>(emptySitePage);
   const [editingSitePageId, setEditingSitePageId] = useState<string | null>(null);
   const [selectedSiteSectionId, setSelectedSiteSectionId] = useState(emptySitePage.sections[0].id);
+  const [sitePageModalOpen, setSitePageModalOpen] = useState(false);
+  const [navCollapsed, setNavCollapsed] = useState(false);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [contactForm, setContactForm] = useState<Omit<Contact, "id">>(emptyContact);
   const [contactTasks, setContactTasks] = useState<ContactTask[]>([]);
@@ -596,6 +604,7 @@ function AdminApp() {
   function generateSitePage(template: string) {
     const business = authUser?.workspaceName ?? "Your Business";
     const presets: Record<string, Omit<SitePage, "id">> = {
+      blank: { ...emptySitePage, name: "Untitled Page", slug: "untitled-page", template, seoTitle: "Untitled Page", seoDescription: "", sections: [newSiteSection("hero")] },
       coach: { ...emptySitePage, name: `${business} Coaching Page`, slug: slugifyLocal(`${business} coaching`), template, seoTitle: `${business} Coaching`, sections: [
         { id: "hero", type: "hero", eyebrow: "Coaching and consulting", headline: `Grow with ${business}`, body: "A focused page for leads to understand your offer and book the next conversation.", buttonText: "Book a consultation", buttonUrl: `/book/${authUser?.workspaceSlug}/discovery-call` },
         { id: "features", type: "features", headline: "How we help", body: "A simple path from interest to clarity.", items: ["Strategy sessions", "Personalized action plans", "Accountability and follow-up"] },
@@ -615,6 +624,7 @@ function AdminApp() {
     setSiteForm(presets[template] ?? presets.coach);
     setSelectedSiteSectionId((presets[template] ?? presets.coach).sections[0].id);
     setEditingSitePageId(null);
+    setSitePageModalOpen(false);
     setActiveTab("sites");
   }
 
@@ -725,7 +735,7 @@ function AdminApp() {
 
   return (
     <main className="min-h-screen bg-[linear-gradient(180deg,var(--theme-background)_0%,#f4f7ff_42%,#f7fbf8_100%)] text-[var(--theme-text)]" style={themeStyle(theme)}>
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-[#dde3ec] bg-[#fbfcff] px-4 py-5 lg:block">
+      <aside className={`fixed inset-y-0 left-0 hidden border-r border-[#dde3ec] bg-[#fbfcff] px-3 py-5 transition-all lg:block ${navCollapsed ? "w-20" : "w-64"}`}>
         <div className="mb-7 overflow-hidden rounded-md border border-[#e5e9f2] bg-white shadow-sm">
           <ColorRail />
           <div className="p-3">
@@ -735,25 +745,26 @@ function AdminApp() {
             <span className="h-2.5 w-2.5 rounded-full bg-[#fbbc05]" />
             <span className="h-2.5 w-2.5 rounded-full bg-[#ea4335]" />
           </div>
-          <div className="display-font text-lg font800 font-bold">{authUser.workspaceName}</div>
-          <div className="text-xs font-medium text-[#64748b]">/{authUser.workspaceSlug}</div>
+          {!navCollapsed && <><div className="display-font text-lg font800 font-bold">{authUser.workspaceName}</div>
+          <div className="text-xs font-medium text-[#64748b]">/{authUser.workspaceSlug}</div></>}
           </div>
         </div>
+        <button className="mb-3 flex w-full items-center justify-center rounded-md border border-[#dde3ec] bg-white px-3 py-2 text-xs font-black text-[#64748b]" onClick={() => setNavCollapsed(!navCollapsed)}>{navCollapsed ? ">" : "< Collapse"}</button>
         <nav className="space-y-1 text-sm font-medium">
-          <NavItem icon={<Calendar size={17} />} label="Scheduling" active={["calendars", "availability", "bookings", "schedulingSettings"].includes(activeTab)} onClick={() => setActiveTab("calendars")} />
-          <NavItem icon={<Users size={17} />} label="Contacts" active={activeTab === "contacts"} onClick={() => setActiveTab("contacts")} />
-          <NavItem icon={<Clock size={17} />} label="Opportunities" active={activeTab === "opportunities"} onClick={() => setActiveTab("opportunities")} />
-          <NavItem icon={<Workflow size={17} />} label="Automations" active={activeTab === "automations"} onClick={() => setActiveTab("automations")} />
-          <NavItem icon={<ExternalLink size={17} />} label="Sites" active={activeTab === "sites"} onClick={() => setActiveTab("sites")} />
+          <NavItem collapsed={navCollapsed} icon={<Calendar size={17} />} label="Scheduling" active={["calendars", "availability", "bookings", "schedulingSettings"].includes(activeTab)} onClick={() => setActiveTab("calendars")} />
+          <NavItem collapsed={navCollapsed} icon={<Users size={17} />} label="Contacts" active={activeTab === "contacts"} onClick={() => setActiveTab("contacts")} />
+          <NavItem collapsed={navCollapsed} icon={<Clock size={17} />} label="Opportunities" active={activeTab === "opportunities"} onClick={() => setActiveTab("opportunities")} />
+          <NavItem collapsed={navCollapsed} icon={<Workflow size={17} />} label="Automations" active={activeTab === "automations"} onClick={() => setActiveTab("automations")} />
+          <NavItem collapsed={navCollapsed} icon={<ExternalLink size={17} />} label="Sites" active={activeTab === "sites"} onClick={() => setActiveTab("sites")} />
         </nav>
         <nav className="absolute bottom-5 left-4 right-4 space-y-1 text-sm font-medium">
-          <NavItem icon={<Settings size={17} />} label="App Settings" active={activeTab === "settings"} onClick={() => setActiveTab("settings")} />
-          <NavItem icon={<Users size={17} />} label="My Profile" active={activeTab === "profile"} onClick={() => setActiveTab("profile")} />
-          <NavItem icon={<LogOut size={17} />} label="Logout" onClick={() => { clearAuth(); setAuthUser(null); }} />
+          <NavItem collapsed={navCollapsed} icon={<Settings size={17} />} label="App Settings" active={activeTab === "settings"} onClick={() => setActiveTab("settings")} />
+          <NavItem collapsed={navCollapsed} icon={<Users size={17} />} label="My Profile" active={activeTab === "profile"} onClick={() => setActiveTab("profile")} />
+          <NavItem collapsed={navCollapsed} icon={<LogOut size={17} />} label="Logout" onClick={() => { clearAuth(); setAuthUser(null); }} />
         </nav>
       </aside>
 
-      <section className="lg:pl-64">
+      <section className={navCollapsed ? "lg:pl-20" : "lg:pl-64"}>
         <header className="border-b border-[#dde3ec] bg-white/95">
           <ColorRail />
           <div className="flex items-center justify-between px-5 py-3 lg:px-6">
@@ -1283,49 +1294,39 @@ function AdminApp() {
             </Panel>
           </section>}
 
-          {activeTab === "sites" && <section className="grid gap-5 xl:grid-cols-[380px_1fr]">
-            <div className="space-y-5">
-              <Panel title="Pages" icon={<ExternalLink size={18} />}>
-                <div className="mb-4 grid grid-cols-3 gap-2">
-                  {["coach", "clinic", "personal"].map((template) => <button key={template} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-bold capitalize" onClick={() => generateSitePage(template)}>{template}</button>)}
-                </div>
-                <div className="space-y-2">
-                  {sitePages.length === 0 && <p className="text-sm text-stone-600">No pages yet. Generate a starter page above.</p>}
-                  {sitePages.map((page) => (
-                    <button key={page.id} className={`w-full rounded-md border p-3 text-left text-sm ${editingSitePageId === page.id ? "border-[var(--theme-primary)] bg-[#f5f9ff]" : "border-[#dde3ec] bg-white"}`} onClick={() => editSitePage(page)}>
-                      <div className="font-black">{page.name}</div>
-                      <div className="text-xs text-[#64748b]">/{page.slug} - {page.status}</div>
-                    </button>
-                  ))}
-                </div>
-              </Panel>
-              <Panel title="Page Settings" icon={<Settings size={18} />}>
-                <div className="space-y-3">
-                  <Field label="Name" value={siteForm.name} onChange={(value) => setSiteForm({ ...siteForm, name: value, slug: editingSitePageId ? siteForm.slug : slugifyLocal(value) })} />
-                  <Field label="Slug" value={siteForm.slug} onChange={(value) => setSiteForm({ ...siteForm, slug: slugifyLocal(value) })} />
-                  <label className="text-sm font-bold text-[#334155]">Status
-                    <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={siteForm.status} onChange={(event) => setSiteForm({ ...siteForm, status: event.target.value as "Draft" | "Published" })}>
-                      <option value="Draft">Draft</option>
-                      <option value="Published">Published</option>
-                    </select>
-                  </label>
-                  <Field label="SEO title" value={siteForm.seoTitle ?? ""} onChange={(value) => setSiteForm({ ...siteForm, seoTitle: value })} />
-                  <textarea className="min-h-20 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" placeholder="SEO description" value={siteForm.seoDescription ?? ""} onChange={(event) => setSiteForm({ ...siteForm, seoDescription: event.target.value })} />
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveSitePage}><Save size={16} /> Save page</button>
-                  {editingSitePageId && <button className="rounded-md border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-bold text-rose-700" onClick={() => sitePages.find((page) => page.id === editingSitePageId) && deleteSitePage(sitePages.find((page) => page.id === editingSitePageId)!)}>Delete</button>}
-                </div>
-                {editingSitePageId && <a className="mt-3 inline-flex items-center gap-2 text-sm font-bold text-[var(--theme-primary)]" target="_blank" href={`/${authUser.workspaceSlug}/${siteForm.slug}`}><ExternalLink size={15} /> Open published URL</a>}
-              </Panel>
+          {activeTab === "sites" && <section className="space-y-5">
+            <div className="flex flex-col gap-3 rounded-md border border-[#dde3ec] bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="display-font text-2xl font-black text-[var(--theme-text)]">{siteForm.name}</div>
+                <p className="text-sm text-[#64748b]">/{authUser.workspaceSlug}/{siteForm.slug} - {siteForm.status}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button className="rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" onClick={() => setSitePageModalOpen(true)}>Pages & templates</button>
+                <button className="inline-flex items-center gap-2 rounded-md bg-[var(--theme-primary)] px-4 py-2 text-sm font-bold text-white" onClick={saveSitePage}><Save size={16} /> Save page</button>
+                {editingSitePageId && <a className="inline-flex items-center gap-2 rounded-md border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold" target="_blank" href={`/${authUser.workspaceSlug}/${siteForm.slug}`}><ExternalLink size={15} /> Open</a>}
+              </div>
             </div>
-            <Panel title="WYSIWYG Editor" icon={<ExternalLink size={18} />}>
+            <Panel title="Website Builder" icon={<ExternalLink size={18} />}>
               <div className="mb-4 flex flex-wrap gap-2">
                 {siteSectionTypes.map((type) => <button key={type} className="rounded-md border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-black capitalize hover:border-[var(--theme-primary)]" onClick={() => addSiteSection(type)}><Plus size={13} className="mr-1 inline" />{type}</button>)}
               </div>
               <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
                 <SitePagePreview page={siteForm} theme={theme} selectedSectionId={selectedSiteSectionId} onSelectSection={setSelectedSiteSectionId} onReorderSection={reorderSiteSection} />
                 <div className="space-y-4">
+                  <div className="rounded-md border border-[#dde3ec] bg-white p-3">
+                    <div className="mb-3 text-sm font-black">Page settings</div>
+                    <Field label="Name" value={siteForm.name} onChange={(value) => setSiteForm({ ...siteForm, name: value, slug: editingSitePageId ? siteForm.slug : slugifyLocal(value) })} />
+                    <Field label="Slug" value={siteForm.slug} onChange={(value) => setSiteForm({ ...siteForm, slug: slugifyLocal(value) })} />
+                    <label className="mt-3 block text-sm font-bold text-[#334155]">Status
+                      <select className="mt-1 w-full rounded-md border border-[#cbd5e1] bg-white p-2 text-sm" value={siteForm.status} onChange={(event) => setSiteForm({ ...siteForm, status: event.target.value as "Draft" | "Published" })}>
+                        <option value="Draft">Draft</option>
+                        <option value="Published">Published</option>
+                      </select>
+                    </label>
+                    <Field label="SEO title" value={siteForm.seoTitle ?? ""} onChange={(value) => setSiteForm({ ...siteForm, seoTitle: value })} />
+                    <textarea className="mt-3 min-h-16 w-full rounded-md border border-[#cbd5e1] p-3 text-sm" placeholder="SEO description" value={siteForm.seoDescription ?? ""} onChange={(event) => setSiteForm({ ...siteForm, seoDescription: event.target.value })} />
+                    {editingSitePageId && <button className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700" onClick={() => sitePages.find((page) => page.id === editingSitePageId) && deleteSitePage(sitePages.find((page) => page.id === editingSitePageId)!)}>Delete page</button>}
+                  </div>
                   {(() => {
                     const section = siteForm.sections.find((item) => item.id === selectedSiteSectionId) ?? siteForm.sections[0];
                     const index = siteForm.sections.findIndex((item) => item.id === section?.id);
@@ -1389,6 +1390,37 @@ function AdminApp() {
                 </div>
               </div>
             </Panel>
+            {sitePageModalOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f172a]/35 p-4">
+              <div className="w-full max-w-3xl rounded-md bg-white p-5 shadow-2xl">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="display-font text-xl font-black text-[#16202a]">Pages & Templates</div>
+                    <p className="text-sm text-[#64748b]">Start blank or use a preset. More presets can be added to this library later.</p>
+                  </div>
+                  <button className="rounded-md border border-[#cbd5e1] px-3 py-2 text-sm font-bold" onClick={() => setSitePageModalOpen(false)}>Close</button>
+                </div>
+                <div className="grid gap-5 md:grid-cols-2">
+                  <div>
+                    <div className="mb-2 text-sm font-black">Create from preset</div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {sitePagePresets.map((preset) => <button key={preset.id} className="rounded-md border border-[#cbd5e1] bg-white p-4 text-left text-sm font-black hover:border-[var(--theme-primary)] hover:bg-[#f8fbff]" onClick={() => generateSitePage(preset.id)}>{preset.label}</button>)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-2 text-sm font-black">Existing pages</div>
+                    <div className="max-h-80 space-y-2 overflow-auto">
+                      {sitePages.length === 0 && <p className="text-sm text-stone-600">No saved pages yet.</p>}
+                      {sitePages.map((page) => (
+                        <button key={page.id} className={`w-full rounded-md border p-3 text-left text-sm ${editingSitePageId === page.id ? "border-[var(--theme-primary)] bg-[#f5f9ff]" : "border-[#dde3ec] bg-white"}`} onClick={() => { editSitePage(page); setSitePageModalOpen(false); }}>
+                          <div className="font-black">{page.name}</div>
+                          <div className="text-xs text-[#64748b]">/{authUser.workspaceSlug}/{page.slug} - {page.status}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>}
           </section>}
 
           {activeTab === "settings" && <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
@@ -1820,8 +1852,8 @@ function slugifyLocal(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "stage";
 }
 
-function NavItem({ icon, label, active = false, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void }) {
-  return <button className={`flex w-full items-center gap-2 rounded-md border-l-4 px-3 py-2 text-left ${active ? "border-[#4285f4] bg-[#eaf2ff] text-[#174ea6]" : "border-transparent text-[#64748b] hover:border-[#fbbc05] hover:bg-[#fff8df]"}`} onClick={onClick}>{icon}{label}</button>;
+function NavItem({ icon, label, active = false, collapsed = false, onClick }: { icon: React.ReactNode; label: string; active?: boolean; collapsed?: boolean; onClick?: () => void }) {
+  return <button title={label} className={`flex w-full items-center gap-2 rounded-md border-l-4 px-3 py-2 text-left ${collapsed ? "justify-center px-2" : ""} ${active ? "border-[#4285f4] bg-[#eaf2ff] text-[#174ea6]" : "border-transparent text-[#64748b] hover:border-[#fbbc05] hover:bg-[#fff8df]"}`} onClick={onClick}>{icon}{!collapsed && label}</button>;
 }
 
 function ModuleTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
