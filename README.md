@@ -1,23 +1,41 @@
-# Coaching SaaS Calendar Module
+# MyAuraHub SaaS Platform
 
-First module of a multi-tenant SaaS platform for appointment scheduling.
+Serverless-first SaaS platform for coaches, consultants, freelancers, clinics, fitness coaches, and personal brands.
 
 ## What is included
 
-- .NET 8 Web API
-- React + TypeScript + Tailwind frontend
+- React + TypeScript + Tailwind admin/public web app
+- AWS Lambda Python serverless API
+- Legacy .NET 8 Web API prototype
 - PostgreSQL via EF Core
-- Workspace-scoped data model
+- Workspace/subaccount-scoped serverless data model
 - Appointment types
 - Weekly availability
 - Buffers, minimum notice, maximum booking window
 - Public booking links
 - Contact create/update on booking
-- Conflict prevention with serializable booking transaction
+- Contacts, opportunities, automations, sites, marketing, team management
 - Docker Compose for local development
-- AWS CloudFormation starter for ECS Fargate + RDS
+- AWS serverless deployment scripts
 
-## Local run
+## Repository layout
+
+```text
+apps/admin-web              React app shell and modules
+services/core-api           Current deployed Lambda API
+services/*-service          Target module service boundaries
+packages/*                  Shared UI/client/auth/contract packages
+contracts/openapi           API contracts
+contracts/events            EventBridge event contracts
+docs                        Architecture notes
+CoachingSaaS.Api            Original .NET prototype
+infra/aws                   Original ECS/RDS infrastructure prototype
+serverless/aws              Compatibility wrappers for serverless deploy
+```
+
+See [docs/serverless-modular-services.md](docs/serverless-modular-services.md) for the modular serverless strategy.
+
+## Local run with Docker
 
 ```powershell
 docker compose up --build
@@ -38,4 +56,16 @@ Seed data:
 
 ## AWS deploy status
 
-The deployable infrastructure is in `infra/aws/cloudformation.yml`. To deploy to your AWS account, you need to provide AWS credentials or run the AWS CLI locally with an IAM principal that has the permissions listed in `infra/aws/IAM_PERMISSIONS.md`.
+Current serverless deploy:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File services\core-api\deploy.ps1 -AwsRegion ap-southeast-2 -AccountId 604545443541
+```
+
+Compatibility wrapper:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File serverless\aws\deploy.ps1 -AwsRegion ap-southeast-2 -AccountId 604545443541
+```
+
+The original ECS/RDS infrastructure prototype remains in `infra/aws/cloudformation.yml`.

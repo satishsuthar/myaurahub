@@ -1,0 +1,22 @@
+openapi: 3.0.3
+info:
+  title: MyAuraHub Scheduling API
+  version: 0.1.0
+paths:
+  /api/calendar/appointment-types:
+    get:
+      summary: List appointment types for the active workspace or subaccount.
+      responses:
+        "200":
+          description: Appointment types.
+    post:
+      summary: Create an appointment type.
+      responses:
+        "201":
+          description: Appointment type created.
+  /api/calendar/bookings:
+    get:
+      summary: List bookings for the active workspace or subaccount.
+      responses:
+        "200":
+          description: Bookings.

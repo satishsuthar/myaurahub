@@ -10,6 +10,7 @@ build/
 *.log
 *.png
 *.tsbuildinfo
-frontend/dist/
-frontend/node_modules/
+apps/admin-web/dist/
+apps/admin-web/node_modules/
+services/core-api/build/
 serverless/aws/build/

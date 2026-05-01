@@ -46,7 +46,7 @@ if ($LASTEXITCODE -ne 0) { throw "API image build failed." }
 docker push $apiImage
 if ($LASTEXITCODE -ne 0) { throw "API image push failed." }
 
-docker build -t $frontendImage -f frontend/Dockerfile --build-arg "VITE_API_BASE_URL=/" .
+docker build -t $frontendImage -f apps/admin-web/Dockerfile --build-arg "VITE_API_BASE_URL=/" .
 if ($LASTEXITCODE -ne 0) { throw "Frontend image build failed." }
 docker push $frontendImage
 if ($LASTEXITCODE -ne 0) { throw "Frontend image push failed." }
